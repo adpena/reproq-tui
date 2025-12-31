@@ -1,6 +1,6 @@
 module github.com/adpena/reproq-tui
 
-go 1.24.0
+go 1.24.2
 
 require (
 	github.com/BurntSushi/toml v1.6.0

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
- - Go 1.24.0+
+ - Go 1.24.2+
 - golangci-lint (for `make lint`)
 
 ## Common commands
