@@ -68,7 +68,7 @@ func (m *Model) renderHero() string {
 
 func (m *Model) heroSegment(label, value string, style lipgloss.Style) string {
 	l := m.theme.Styles.Muted.Render(label)
-	v := style.Copy().Bold(true).Render(value)
+	v := style.Bold(true).Render(value)
 	return lipgloss.JoinVertical(lipgloss.Left, l, v) + strings.Repeat(" ", 10)
 }
 

@@ -307,17 +307,6 @@ func (m *Model) queueDepthValue() float64 {
 	return float64(ready + waiting)
 }
 
-func (m *Model) runningCountValue() float64 {
-	value := m.latestValue(metrics.MetricTasksRunning)
-	if !math.IsNaN(value) {
-		return value
-	}
-	if running, ok := m.statsTaskCount("RUNNING"); ok {
-		return float64(running)
-	}
-	return math.NaN()
-}
-
 func (m *Model) workerCountValue() float64 {
 	value := m.latestValue(metrics.MetricWorkerCount)
 	if !math.IsNaN(value) {
