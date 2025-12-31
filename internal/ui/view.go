@@ -54,7 +54,7 @@ func (m *Model) renderSetup() string {
 	} else {
 		lines = append(lines,
 			m.theme.Styles.Badge.Render("Step 2 of 2"),
-			"Worker URL or /metrics endpoint:",
+			"Worker URL or full /metrics URL:",
 			m.setupWorkerURL.View(),
 		)
 	}

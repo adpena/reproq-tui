@@ -13,6 +13,9 @@ func TestNormalizeDjangoURLInput(t *testing.T) {
 		{in: "192.168.1.5:8000", want: "http://192.168.1.5:8000"},
 		{in: "https://example.com/reproq/stats/", want: "https://example.com"},
 		{in: "https:\\example.com\\reproq\\stats\\", want: "https://example.com"},
+		{in: "https://example.com/reproq", want: "https://example.com"},
+		{in: "https://example.com/reproq/", want: "https://example.com"},
+		{in: "https://example.com/foo/reproq", want: "https://example.com/foo"},
 	}
 
 	for _, c := range cases {

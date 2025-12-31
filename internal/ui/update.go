@@ -219,9 +219,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return toastClearMsg{}
 				}))
 			}
+			if m.setupActive && m.setupStage == setupWorker {
+				if client.IsStatus(msg.err, http.StatusNotFound) {
+					m.setupNotice = "No worker config returned. Enter a worker URL or full /metrics URL."
+				} else {
+					m.setupNotice = "Config fetch failed. Enter a worker URL or full /metrics URL."
+				}
+			}
 		} else {
+			m.setupNotice = ""
 			if cmd := m.applyWorkerConfigFromConfig(msg.cfg); cmd != nil {
 				cmds = append(cmds, cmd)
+			} else if m.setupActive && m.setupStage == setupWorker && !hasWorkerConfig(msg.cfg) {
+				m.setupNotice = "Enter a worker URL or full /metrics URL."
 			}
 		}
 		if m.cfg.AutoLogin && m.authHeaderManaged && m.authEnabled && m.authToken.Value == "" && !m.authFlowActive {
@@ -375,9 +385,18 @@ func (m *Model) handleSetupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setupWorkerURL.Focus()
 			return m, m.applyDjangoSetup(normalized)
 		}
-		workerURL, err := normalizeBaseURLInput(m.setupWorkerURL.Value())
+		raw := strings.TrimSpace(m.setupWorkerURL.Value())
+		if raw == "" {
+			if strings.TrimSpace(m.cfg.DjangoURL) != "" {
+				m.setupNotice = "Checking Django config..."
+				return m, fetchTUIConfigCmd(m.cfg, m.client)
+			}
+			m.setupNotice = "Enter a worker URL or full /metrics URL."
+			return m, nil
+		}
+		workerURL, err := normalizeBaseURLInput(raw)
 		if err != nil {
-			m.setupNotice = "Enter a valid worker URL or /metrics endpoint"
+			m.setupNotice = "Enter a worker URL or full /metrics URL."
 			return m, nil
 		}
 		return m, m.applyWorkerSetup(workerURL)
@@ -727,10 +746,42 @@ func normalizeDjangoURLInput(raw string) (string, error) {
 		return "", err
 	}
 	normalized = config.DeriveDjangoURL(normalized)
+	normalized = trimReproqSuffix(normalized)
 	if normalized == "" {
 		return "", fmt.Errorf("invalid url")
 	}
 	return normalized, nil
+}
+
+func trimReproqSuffix(base string) string {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return base
+	}
+	path := strings.TrimSuffix(parsed.Path, "/")
+	if path == "" {
+		return base
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > 1 && parts[len(parts)-1] == "reproq" {
+		parts = parts[:len(parts)-1]
+		if len(parts) == 1 {
+			parsed.Path = ""
+		} else {
+			parsed.Path = strings.Join(parts, "/")
+		}
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	}
+	return base
+}
+
+func hasWorkerConfig(cfg auth.TUIConfig) bool {
+	return strings.TrimSpace(cfg.WorkerURL) != "" ||
+		strings.TrimSpace(cfg.WorkerMetricsURL) != "" ||
+		strings.TrimSpace(cfg.WorkerHealthURL) != "" ||
+		strings.TrimSpace(cfg.EventsURL) != ""
 }
 
 func (m *Model) persistSetupConfig() {
