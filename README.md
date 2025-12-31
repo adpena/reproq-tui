@@ -288,7 +288,7 @@ Files are written to the current working directory with a timestamped name.
 
 ## Development
 
-Go 1.25.5+ required.
+Go 1.24.0+ required.
 
 ```
 make fmt
