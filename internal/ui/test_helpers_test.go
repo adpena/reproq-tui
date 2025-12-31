@@ -13,12 +13,8 @@ func newTestModel(t *testing.T, cfg config.Config) *Model {
 	if os.Getenv("REPROQ_TUI_SAFE_TOP") == "" {
 		t.Setenv("REPROQ_TUI_SAFE_TOP", "0")
 	}
-	if os.Getenv("REPROQ_TUI_AUTH_TOKEN") == "" {
-		t.Setenv("REPROQ_TUI_AUTH_TOKEN", "")
-	}
-	if os.Getenv("METRICS_AUTH_TOKEN") == "" {
-		t.Setenv("METRICS_AUTH_TOKEN", "")
-	}
+	t.Setenv("REPROQ_TUI_AUTH_TOKEN", "")
+	t.Setenv("METRICS_AUTH_TOKEN", "")
 	if os.Getenv("REPROQ_TUI_AUTH_FILE") == "" {
 		t.Setenv("REPROQ_TUI_AUTH_FILE", filepath.Join(t.TempDir(), "auth.json"))
 	}

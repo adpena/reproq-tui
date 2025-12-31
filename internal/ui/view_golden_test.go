@@ -16,6 +16,9 @@ import (
 
 func TestDashboardViewGolden(t *testing.T) {
 	t.Setenv("REPROQ_TUI_SAFE_TOP", "0")
+	t.Setenv("REPROQ_TUI_AUTH_TOKEN", "")
+	t.Setenv("METRICS_AUTH_TOKEN", "")
+	t.Setenv("REPROQ_TUI_AUTH_FILE", filepath.Join(t.TempDir(), "auth.json"))
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
 	cfg.WorkerHealthURL = "http://worker.local/healthz"
