@@ -19,7 +19,7 @@
 |   SYSTEM                         |                                                        |
 |  Worker Mem     -                |  Queue depth  7.00                 upd 09:20:10        |
 |  DB Pool        NaN              |  No data yet                                           |
-|  DB Wait        0                |                                                        |
+|  DB Wait        -                |                                                        |
 |                                  |                                                        |
 |   PERIODIC                       |                                                        |
 |  Count          1                |                                                        |

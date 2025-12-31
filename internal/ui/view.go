@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -464,6 +465,12 @@ func (m *Model) renderLeftPane(width, height int) string {
 	runningCount, _ := m.statsTaskCount("RUNNING")
 	failedCount, _ := m.statsTaskCount("FAILED")
 
+	dbWait := m.latestValue(metrics.MetricDBPoolWait)
+	dbWaitValue := "-"
+	if !math.IsNaN(dbWait) && !math.IsInf(dbWait, 0) {
+		dbWaitValue = formatCount(int64(dbWait))
+	}
+
 	lines = append(lines,
 		m.theme.Styles.PaneHeader.Render("TASKS"),
 		m.labelValue("Queue depth", val(formatNumber(queueDepth))),
@@ -483,7 +490,7 @@ func (m *Model) renderLeftPane(width, height int) string {
 		m.theme.Styles.PaneHeader.Render("SYSTEM"),
 		m.labelValue("Worker Mem", val(formatBytes(m.latestValue(metrics.MetricWorkerMemUsage)))),
 		m.labelValue("DB Pool", val(fmt.Sprintf("%.0f", m.latestValue(metrics.MetricDBPoolConnections)))),
-		m.labelValue("DB Wait", val(formatCount(int64(m.latestValue(metrics.MetricDBPoolWait))))),
+		m.labelValue("DB Wait", val(dbWaitValue)),
 		"",
 		m.theme.Styles.PaneHeader.Render("PERIODIC"),
 		m.labelValue("Count", val(periodicCount)),
