@@ -68,6 +68,8 @@ Pollers -> parsers -> snapshots -> ring buffers -> Bubble Tea model -> view
 ## Auth flow (optional)
 
 - The UI initiates pairing with `GET /reproq/tui/pair/` on reproq-django.
+- If a Django URL is known, the UI first fetches `/reproq/tui/config/` to
+  auto-discover worker metrics/health/events endpoints.
 - The user signs in on a dedicated login page and approves the session.
 - Django returns a signed token that is stored locally and applied as an `Authorization` header.
 - When auto-login is enabled, the UI can trigger pairing after an auth failure.

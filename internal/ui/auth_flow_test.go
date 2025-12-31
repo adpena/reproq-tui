@@ -81,6 +81,43 @@ func TestAuthCancelDuringFlow(t *testing.T) {
 	}
 }
 
+func TestAuthKeyCancelsFlow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.WorkerMetricsURL = "http://worker.local/metrics"
+	model := NewModel(cfg)
+	model.authFlowActive = true
+	model.authPair = auth.Pairing{Code: "abc"}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	model = updated.(*Model)
+
+	if model.authFlowActive {
+		t.Fatalf("expected auth flow to be canceled")
+	}
+	if model.authPair.Code != "" {
+		t.Fatalf("expected auth pair to be cleared")
+	}
+	if model.toast != "Auth canceled" {
+		t.Fatalf("expected cancel toast, got %q", model.toast)
+	}
+}
+
+func TestAuthKeyOpensURLPromptWhenMissingDjango(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.WorkerMetricsURL = "http://worker.local/metrics"
+	model := NewModel(cfg)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	model = updated.(*Model)
+
+	if !model.authURLActive {
+		t.Fatalf("expected auth URL prompt to open")
+	}
+	if model.authURLInput.Value() != "" {
+		t.Fatalf("expected empty auth URL input, got %q", model.authURLInput.Value())
+	}
+}
+
 func TestAuthApprovedUpdatesTokenAndPersists(t *testing.T) {
 	authPath := filepath.Join(t.TempDir(), "auth.json")
 	t.Setenv("REPROQ_TUI_AUTH_FILE", authPath)
@@ -122,5 +159,40 @@ func TestAuthApprovedUpdatesTokenAndPersists(t *testing.T) {
 	}
 	if stored.DjangoURL != cfg.DjangoURL {
 		t.Fatalf("expected stored django url, got %q", stored.DjangoURL)
+	}
+}
+
+func TestAuthKeySignsOutClearsToken(t *testing.T) {
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	t.Setenv("REPROQ_TUI_AUTH_FILE", authPath)
+
+	cfg := config.DefaultConfig()
+	cfg.WorkerMetricsURL = "http://worker.local/metrics"
+	cfg.DjangoURL = "https://django.example.com"
+	model := NewModel(cfg)
+
+	expires := time.Now().Add(time.Hour)
+	updated, _ := model.Update(authStatusMsg{
+		status: auth.PairStatus{
+			Status:    "approved",
+			Token:     "token-123",
+			ExpiresAt: expires,
+		},
+	})
+	model = updated.(*Model)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	model = updated.(*Model)
+
+	if model.authToken.Value != "" {
+		t.Fatalf("expected auth token cleared")
+	}
+	if model.toast != "Signed out" {
+		t.Fatalf("expected signed out toast, got %q", model.toast)
+	}
+
+	store := auth.NewStore(authPath)
+	if _, err := store.Load(); err == nil {
+		t.Fatalf("expected auth token to be cleared from store")
 	}
 }

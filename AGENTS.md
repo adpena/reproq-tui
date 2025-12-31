@@ -15,7 +15,7 @@
 - `make test`: run `go test ./...`.
 - `make lint`: run `golangci-lint`.
 - `make build`: build the `reproq-tui` binary.
-- `make run`: run the dashboard (requires `--worker-metrics-url`).
+- `make run`: run the dashboard (prompts for Django URL/worker URL if not configured).
 - `reproq-tui demo`: run the mock server and dashboard UI.
 
 ## Coding Style & Naming Conventions
