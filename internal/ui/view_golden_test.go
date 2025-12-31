@@ -118,7 +118,8 @@ func TestDashboardViewGolden(t *testing.T) {
 		t.Fatalf("read golden: %v", err)
 	}
 	if view != string(data) {
-		t.Fatalf("dashboard view does not match golden output (set UPDATE_GOLDEN=1 to refresh)")
+		line, expected, actual := firstDiffLine(string(data), view)
+		t.Fatalf("dashboard view does not match golden output (set UPDATE_GOLDEN=1 to refresh)\nline %d\nexpected: %q\nactual:   %q", line, expected, actual)
 	}
 }
 
@@ -142,4 +143,27 @@ func normalizeView(input string) string {
 		lines[i] = strings.TrimRight(line, " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func firstDiffLine(expected, actual string) (int, string, string) {
+	expLines := strings.Split(expected, "\n")
+	actLines := strings.Split(actual, "\n")
+	max := len(expLines)
+	if len(actLines) > max {
+		max = len(actLines)
+	}
+	for i := 0; i < max; i++ {
+		expLine := ""
+		actLine := ""
+		if i < len(expLines) {
+			expLine = expLines[i]
+		}
+		if i < len(actLines) {
+			actLine = actLines[i]
+		}
+		if expLine != actLine {
+			return i + 1, expLine, actLine
+		}
+	}
+	return max, "", ""
 }
