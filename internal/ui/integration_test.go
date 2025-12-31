@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/adpena/reproq-tui/internal/app/demo"
 	"github.com/adpena/reproq-tui/internal/config"
@@ -54,7 +53,5 @@ func TestHeadlessUpdateLoop(t *testing.T) {
 	model = updated.(*Model)
 	updated, _ = model.Update(healthTickMsg{})
 	model = updated.(*Model)
-	updated, _ = model.Update(statsTickMsg{})
-	model = updated.(*Model)
-	_ = time.Now()
+	_, _ = model.Update(statsTickMsg{})
 }

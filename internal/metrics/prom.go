@@ -38,7 +38,7 @@ func Scrape(ctx context.Context, httpClient *client.Client, url string, catalog 
 }
 
 func parseMetrics(reader io.Reader) (map[string]*dto.MetricFamily, error) {
-	parser := expfmt.NewTextParser(model.NameValidationScheme)
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(reader)
 }
 

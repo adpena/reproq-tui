@@ -101,8 +101,15 @@ func connect(ctx context.Context, httpClient *client.Client, url string, out cha
 		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			if len(strings.TrimSpace(line)) > 0 {
-				dataLines = append(dataLines, strings.TrimSpace(line))
+			line = strings.TrimRight(line, "\r\n")
+			if strings.HasPrefix(line, "data:") {
+				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			}
+			if len(dataLines) > 0 {
+				payload := strings.Join(dataLines, "\n")
+				if event, ok := parseEvent(payload); ok {
+					out <- event
+				}
 			}
 			return err
 		}

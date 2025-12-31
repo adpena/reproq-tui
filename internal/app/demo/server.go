@@ -3,7 +3,9 @@ package demo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -52,7 +54,11 @@ func Start() (*Server, error) {
 	server.HTTPServer = &http.Server{
 		Handler: mux,
 	}
-	go server.HTTPServer.Serve(listener)
+	go func() {
+		if err := server.HTTPServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("demo server stopped: %v", err)
+		}
+	}()
 	go state.run()
 
 	return server, nil

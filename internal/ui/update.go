@@ -469,11 +469,9 @@ func normalizeDjangoURLInput(raw string) (string, error) {
 	lowerTrimmed := strings.ToLower(trimmed)
 	if strings.HasPrefix(lowerTrimmed, "http:/") && !strings.HasPrefix(lowerTrimmed, "http://") {
 		trimmed = "http://" + trimmed[len("http:/"):]
-		lowerTrimmed = "http://" + lowerTrimmed[len("http:/"):]
 	}
 	if strings.HasPrefix(lowerTrimmed, "https:/") && !strings.HasPrefix(lowerTrimmed, "https://") {
 		trimmed = "https://" + trimmed[len("https:/"):]
-		lowerTrimmed = "https://" + lowerTrimmed[len("https:/"):]
 	}
 	if !strings.Contains(trimmed, "://") {
 		scheme := "https://"
