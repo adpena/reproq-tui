@@ -15,6 +15,7 @@ import (
 )
 
 func TestDashboardViewGolden(t *testing.T) {
+	t.Setenv("REPROQ_TUI_SAFE_TOP", "0")
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
 	cfg.WorkerHealthURL = "http://worker.local/healthz"
