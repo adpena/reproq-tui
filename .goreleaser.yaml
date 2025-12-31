@@ -1,0 +1,46 @@
+project_name: reproq-tui
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: reproq-tui
+    main: ./cmd/reproq-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - scripts/install.sh
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  extra_files:
+    - glob: scripts/install.sh
+
+brews:
+  - name: reproq-tui
+    homepage: https://github.com/adpena/reproq-tui
+    description: Modern realtime TUI dashboard for Reproq Worker.
+    license: MIT
+    repository:
+      owner: adpena
+      name: homebrew-tap
+    install: |
+      bin.install "reproq-tui"
