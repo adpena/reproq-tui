@@ -74,6 +74,7 @@ func TestPairIncludesWorkerConfig(t *testing.T) {
 				"worker_metrics_url": "https://worker.example.com/metrics",
 				"worker_health_url":  "https://worker.example.com/healthz",
 				"events_url":         "https://worker.example.com/events",
+				"low_memory_mode":    true,
 			})
 		default:
 			http.NotFound(w, r)
@@ -99,5 +100,8 @@ func TestPairIncludesWorkerConfig(t *testing.T) {
 	}
 	if pair.EventsURL != "https://worker.example.com/events" {
 		t.Fatalf("expected events url, got %q", pair.EventsURL)
+	}
+	if !pair.LowMemoryMode {
+		t.Fatal("expected low memory mode to be true")
 	}
 }

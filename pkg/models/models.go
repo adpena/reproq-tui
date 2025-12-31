@@ -36,11 +36,17 @@ type Event struct {
 }
 
 type DjangoStats struct {
-	Tasks     map[string]int64            `json:"tasks"`
-	Queues    map[string]map[string]int64 `json:"queues"`
-	Workers   []WorkerInfo                `json:"workers"`
-	Periodic  []PeriodicTask              `json:"periodic"`
-	FetchedAt time.Time                   `json:"fetched_at,omitempty"`
+	Tasks      map[string]int64            `json:"tasks"`
+	Queues     map[string]map[string]int64 `json:"queues"`
+	Workers    []WorkerInfo                `json:"workers"`
+	Periodic   []PeriodicTask              `json:"periodic"`
+	TopFailing []FailingTask               `json:"top_failing"`
+	FetchedAt  time.Time                   `json:"fetched_at,omitempty"`
+}
+
+type FailingTask struct {
+	TaskPath string `json:"task_path"`
+	Count    int64  `json:"count"`
 }
 
 type WorkerInfo struct {

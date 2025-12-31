@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,12 +108,15 @@ type Model struct {
 	authNeeded        bool
 	authErr           error
 
+	lowMemoryMode bool
+
 	eventsEnabled bool
 	eventsBuffer  *events.Buffer
 	eventsCh      chan models.Event
 	eventsBaseURL string
 	eventsURL     string
 	eventsCancel  context.CancelFunc
+	lastEventAt   time.Time
 	ctx           context.Context
 	cancel        context.CancelFunc
 
@@ -119,6 +124,8 @@ type Model struct {
 	toastExpiry time.Time
 
 	spinner spinner.Model
+
+	safeTop int
 }
 
 func NewModel(cfg config.Config) *Model {
@@ -146,16 +153,19 @@ func NewModel(cfg config.Config) *Model {
 		capacity = 30
 	}
 	series := map[string]*metrics.RingBuffer{
-		metrics.MetricQueueDepth:       metrics.NewRingBuffer(capacity),
-		metrics.MetricTasksTotal:       metrics.NewRingBuffer(capacity),
-		metrics.MetricTasksFailed:      metrics.NewRingBuffer(capacity),
-		metrics.MetricTasksRunning:     metrics.NewRingBuffer(capacity),
-		metrics.MetricWorkerCount:      metrics.NewRingBuffer(capacity),
-		metrics.MetricConcurrencyInUse: metrics.NewRingBuffer(capacity),
-		metrics.MetricConcurrencyLimit: metrics.NewRingBuffer(capacity),
-		metrics.MetricLatencyP95:       metrics.NewRingBuffer(capacity),
-		seriesThroughput:               metrics.NewRingBuffer(capacity),
-		seriesErrors:                   metrics.NewRingBuffer(capacity),
+		metrics.MetricQueueDepth:        metrics.NewRingBuffer(capacity),
+		metrics.MetricTasksTotal:        metrics.NewRingBuffer(capacity),
+		metrics.MetricTasksFailed:       metrics.NewRingBuffer(capacity),
+		metrics.MetricTasksRunning:      metrics.NewRingBuffer(capacity),
+		metrics.MetricWorkerCount:       metrics.NewRingBuffer(capacity),
+		metrics.MetricConcurrencyInUse:  metrics.NewRingBuffer(capacity),
+		metrics.MetricConcurrencyLimit:  metrics.NewRingBuffer(capacity),
+		metrics.MetricLatencyP95:        metrics.NewRingBuffer(capacity),
+		metrics.MetricWorkerMemUsage:    metrics.NewRingBuffer(capacity),
+		metrics.MetricDBPoolConnections: metrics.NewRingBuffer(capacity),
+		metrics.MetricDBPoolWait:        metrics.NewRingBuffer(capacity),
+		seriesThroughput:                metrics.NewRingBuffer(capacity),
+		seriesErrors:                    metrics.NewRingBuffer(capacity),
 	}
 
 	filter := textinput.New()
@@ -256,6 +266,7 @@ func NewModel(cfg config.Config) *Model {
 		ctx:               ctx,
 		cancel:            cancel,
 		spinner:           spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(theme.Resolve(cfg.Theme).Palette.Accent))),
+		safeTop:           safeTopPadding(),
 	}
 	model.applyInputStyles()
 	return model
@@ -298,7 +309,7 @@ func (m *Model) Close() {
 }
 
 func (m *Model) startEvents() {
-	if !m.eventsEnabled || m.eventsBaseURL == "" {
+	if m.lowMemoryMode || !m.eventsEnabled || m.eventsBaseURL == "" {
 		return
 	}
 	m.restartEvents(m.eventsBaseURL, true)
@@ -325,7 +336,7 @@ func (m *Model) startPollingCmds() tea.Cmd {
 }
 
 func (m *Model) restartEvents(url string, clear bool) {
-	if url == "" {
+	if m.lowMemoryMode || url == "" {
 		return
 	}
 	if m.eventsCancel != nil {
@@ -344,9 +355,57 @@ func (m *Model) restartEvents(url string, clear bool) {
 	go events.Listen(eventsCtx, m.client, url, m.eventsCh)
 }
 
+func (m *Model) applyLowMemoryMode(enabled bool) {
+	if !enabled || m.lowMemoryMode {
+		return
+	}
+	m.lowMemoryMode = true
+	if m.eventsCancel != nil {
+		m.eventsCancel()
+		m.eventsCancel = nil
+	}
+	m.eventsEnabled = false
+	m.eventsBaseURL = ""
+	m.eventsURL = ""
+	if m.eventsBuffer != nil {
+		m.eventsBuffer.Clear()
+	}
+}
+
 func (m *Model) currentWindow() time.Duration {
 	if m.windowIndex < 0 || m.windowIndex >= len(m.windowOptions) {
 		return 5 * time.Minute
 	}
 	return m.windowOptions[m.windowIndex]
+}
+
+func safeTopPadding() int {
+	if val := strings.TrimSpace(os.Getenv("REPROQ_TUI_SAFE_TOP")); val != "" {
+		return parseSafeTop(val)
+	}
+	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	if termProgram == "iterm.app" && os.Getenv("ITERM_SESSION_ID") != "" {
+		return 1
+	}
+	if termProgram == "ghostty" {
+		return 1
+	}
+	return 0
+}
+
+func parseSafeTop(val string) int {
+	val = strings.ToLower(strings.TrimSpace(val))
+	switch val {
+	case "1", "true", "yes", "y", "on":
+		return 1
+	case "0", "false", "no", "n", "off":
+		return 0
+	}
+	if parsed, err := strconv.Atoi(val); err == nil {
+		if parsed < 0 {
+			return 0
+		}
+		return parsed
+	}
+	return 0
 }

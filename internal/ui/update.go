@@ -184,6 +184,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		if m.eventsEnabled {
 			m.eventsBuffer.Add(msg.event)
+			if !msg.event.Timestamp.IsZero() {
+				m.lastEventAt = msg.event.Timestamp
+			}
 			return m, listenEventsCmd(m.eventsCh)
 		}
 		return m, nil
@@ -201,6 +204,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authPair = msg.pair
 		m.authFlowActive = true
 		m.authErr = nil
+		m.applyLowMemoryMode(msg.pair.LowMemoryMode)
 		tick := tea.Tick(time.Second, func(time.Time) tea.Msg {
 			return authTickMsg{}
 		})
@@ -227,6 +231,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else {
+			m.applyLowMemoryMode(msg.cfg.LowMemoryMode)
 			m.setupNotice = ""
 			if cmd := m.applyWorkerConfigFromConfig(msg.cfg); cmd != nil {
 				cmds = append(cmds, cmd)

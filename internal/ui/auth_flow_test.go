@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/adpena/reproq-tui/internal/auth"
 	"github.com/adpena/reproq-tui/internal/config"
+	"github.com/adpena/reproq-tui/pkg/client"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -16,7 +19,7 @@ func TestAuthURLPromptLifecycle(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	model = updated.(*Model)
@@ -63,7 +66,7 @@ func TestAuthURLPromptLifecycle(t *testing.T) {
 func TestAuthCancelDuringFlow(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 	model.authFlowActive = true
 	model.authPair = auth.Pairing{Code: "abc"}
 
@@ -84,7 +87,7 @@ func TestAuthCancelDuringFlow(t *testing.T) {
 func TestAuthKeyCancelsFlow(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 	model.authFlowActive = true
 	model.authPair = auth.Pairing{Code: "abc"}
 
@@ -105,7 +108,7 @@ func TestAuthKeyCancelsFlow(t *testing.T) {
 func TestAuthKeyOpensURLPromptWhenMissingDjango(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
 	model = updated.(*Model)
@@ -126,7 +129,7 @@ func TestAuthApprovedUpdatesTokenAndPersists(t *testing.T) {
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
 	cfg.DjangoURL = "https://django.example.com"
 	cfg.DjangoStatsURL = "https://django.example.com/reproq/stats/"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 	model.authFlowActive = true
 
 	expires := time.Now().Add(time.Hour)
@@ -162,6 +165,29 @@ func TestAuthApprovedUpdatesTokenAndPersists(t *testing.T) {
 	}
 }
 
+func TestAuthPromptSuppressesAuthStatusError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.WorkerMetricsURL = "http://worker.local/metrics"
+	model := newTestModel(t, cfg)
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model = updated.(*Model)
+	model.authFlowActive = true
+	model.authPair = auth.Pairing{VerifyURL: "https://django.example.com/reproq/tui/authorize/?code=abc"}
+	model.authErr = client.StatusError{
+		URL:  "https://django.example.com/reproq/tui/healthz/",
+		Code: http.StatusForbidden,
+	}
+
+	view := model.renderAuthPrompt()
+	if strings.Contains(view, "Error:") {
+		t.Fatalf("expected auth error to be suppressed in prompt")
+	}
+	if !strings.Contains(view, "Waiting for approval...") {
+		t.Fatalf("expected waiting state in prompt")
+	}
+}
+
 func TestAuthKeySignsOutClearsToken(t *testing.T) {
 	authPath := filepath.Join(t.TempDir(), "auth.json")
 	t.Setenv("REPROQ_TUI_AUTH_FILE", authPath)
@@ -169,7 +195,7 @@ func TestAuthKeySignsOutClearsToken(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.WorkerMetricsURL = "http://worker.local/metrics"
 	cfg.DjangoURL = "https://django.example.com"
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 
 	expires := time.Now().Add(time.Hour)
 	updated, _ := model.Update(authStatusMsg{

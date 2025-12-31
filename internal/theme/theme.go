@@ -43,6 +43,7 @@ type Styles struct {
 	Muted           lipgloss.Style
 	Accent          lipgloss.Style
 	AccentAlt       lipgloss.Style
+	Value           lipgloss.Style
 	Border          lipgloss.Style
 	KeyHint         lipgloss.Style
 	PaneFocus       lipgloss.Style
@@ -59,17 +60,17 @@ func Resolve(mode string) Theme {
 	var palette Palette
 	if themeMode == "dark" {
 		palette = Palette{
-			Bg:        pickColor(profile, "#0b0f14", "234", "0"),
-			Panel:     pickColor(profile, "#141b24", "235", "0"),
-			PanelAlt:  pickColor(profile, "#1b2430", "237", "0"),
-			Border:    pickColor(profile, "#2c3642", "240", "8"),
-			Text:      pickColor(profile, "#d7dde5", "253", "7"),
-			Muted:     pickColor(profile, "#9aa5b1", "246", "8"),
-			Accent:    pickColor(profile, "#52d1b2", "79", "6"),
-			AccentAlt: pickColor(profile, "#5aa9ff", "75", "4"),
-			Success:   pickColor(profile, "#74d99f", "114", "2"),
-			Warning:   pickColor(profile, "#f4bf75", "215", "3"),
-			Danger:    pickColor(profile, "#ff6b6b", "203", "1"),
+			Bg:        pickColor(profile, "#050505", "232", "0"),
+			Panel:     pickColor(profile, "#09090b", "233", "0"),
+			PanelAlt:  pickColor(profile, "#18181b", "235", "0"),
+			Border:    pickColor(profile, "#27272a", "237", "8"),
+			Text:      pickColor(profile, "#fafafa", "255", "7"),
+			Muted:     pickColor(profile, "#71717a", "243", "8"),
+			Accent:    pickColor(profile, "#22d3ee", "45", "6"), // Cyan
+			AccentAlt: pickColor(profile, "#10b981", "35", "2"), // Emerald
+			Success:   pickColor(profile, "#4ade80", "120", "2"),
+			Warning:   pickColor(profile, "#fbbf24", "214", "3"),
+			Danger:    pickColor(profile, "#f87171", "203", "1"),
 		}
 	} else {
 		palette = Palette{
@@ -102,8 +103,8 @@ func buildStyles(p Palette) Styles {
 
 	return Styles{
 		StatusBar: lipgloss.NewStyle().
-			Background(p.PanelAlt).
-			Foreground(p.Text).
+			Background(p.Bg).
+			Foreground(p.Muted).
 			Padding(0, 1),
 		StatusOK:        lipgloss.NewStyle().Foreground(p.Success).Bold(true),
 		StatusWarn:      lipgloss.NewStyle().Foreground(p.Warning).Bold(true),
@@ -115,23 +116,22 @@ func buildStyles(p Palette) Styles {
 			Background(p.Panel).
 			Foreground(p.Text).
 			Padding(1, 2).
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder(), false, false, false, true). // Left border only for cleaner look
 			BorderForeground(p.Border),
 		CardTitle: lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		Muted:     lipgloss.NewStyle().Foreground(p.Muted),
 		Accent:    lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		AccentAlt: lipgloss.NewStyle().Foreground(p.AccentAlt).Bold(true),
+		Value:     lipgloss.NewStyle().Foreground(p.Text).Bold(true),
 		Border:    lipgloss.NewStyle().Foreground(p.Border),
 		KeyHint: lipgloss.NewStyle().
 			Foreground(p.Muted).
-			Background(p.PanelAlt).
 			Padding(0, 1),
 		PaneFocus: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(p.AccentAlt),
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(p.Accent),
 		PaneHeader: lipgloss.NewStyle().
-			Foreground(p.Text).
-			Background(p.PanelAlt).
+			Foreground(p.Accent).
 			Bold(true).
 			Padding(0, 1),
 		Badge: lipgloss.NewStyle().

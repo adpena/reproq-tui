@@ -21,11 +21,11 @@ func TestDashboardViewGolden(t *testing.T) {
 	cfg.EventsURL = "http://worker.local/events"
 	cfg.DjangoStatsURL = "https://django.local/reproq/stats/"
 
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 	model = updated.(*Model)
 
-	base := time.Now().Add(-10 * time.Second).UTC()
+	base := time.Date(2024, 1, 1, 9, 20, 0, 0, time.UTC)
 	addSamples := func(key string, values []float64) {
 		buf := model.series[key]
 		for i, v := range values {
@@ -50,7 +50,7 @@ func TestDashboardViewGolden(t *testing.T) {
 		Version: "0.1.0",
 		Build:   "demo",
 	}
-	model.lastScrapeAt = time.Now()
+	model.lastScrapeAt = base.Add(10 * time.Second)
 	model.lastScrapeDelay = 120 * time.Millisecond
 
 	model.lastStats = models.DjangoStats{

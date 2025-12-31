@@ -40,6 +40,8 @@ Modern, realtime terminal dashboard for Reproq Worker (and optional Reproq Djang
 
 ## Development Conventions
 
+- **Aesthetics & UX**: Maintain a modern, high-contrast "Obsidian" aesthetic. Prioritize the use of whitespace, subtle borders, and vivid accent colors (Cyan, Emerald, Amber) to make the TUI feel "alive" and professional.
+- **Observability**: Every feature must consider the telemetry it consumes. Deep observability (DB pool stats, system telemetry, task heatmaps) is a first-class citizen.
 - **Style**: Follow standard Go formatting (`go fmt`).
 - **Testing**:
     - Run tests before submitting changes.

@@ -174,6 +174,20 @@ func (m *Model) statsPeriodicCount() (int64, bool) {
 	return int64(len(m.lastStats.Periodic)), true
 }
 
+func (m *Model) statsNextPeriodic() (models.PeriodicTask, bool) {
+	if !m.statsAvailable() {
+		return models.PeriodicTask{}, false
+	}
+	periodic := m.statsPeriodicByNextRun()
+	for _, task := range periodic {
+		if !task.Enabled || task.NextRunAt.IsZero() {
+			continue
+		}
+		return task, true
+	}
+	return models.PeriodicTask{}, false
+}
+
 func (m *Model) statsWorkersByRecent() []models.WorkerInfo {
 	if !m.statsAvailable() {
 		return nil
@@ -183,6 +197,50 @@ func (m *Model) statsWorkersByRecent() []models.WorkerInfo {
 		return workers[i].LastSeenAt.After(workers[j].LastSeenAt)
 	})
 	return workers
+}
+
+func (m *Model) statsWorkerStatusCounts() (int, int, bool) {
+	if !m.statsAvailable() {
+		return 0, 0, false
+	}
+	now := m.referenceTime()
+	cutoff := m.workerActiveCutoff(now)
+	active := 0
+	stale := 0
+	for _, worker := range m.lastStats.Workers {
+		if worker.LastSeenAt.IsZero() || worker.LastSeenAt.Before(cutoff) {
+			stale++
+			continue
+		}
+		active++
+	}
+	return active, stale, true
+}
+
+func (m *Model) splitWorkersByStatus(workers []models.WorkerInfo, now time.Time) ([]models.WorkerInfo, []models.WorkerInfo) {
+	cutoff := m.workerActiveCutoff(now)
+	active := make([]models.WorkerInfo, 0, len(workers))
+	stale := make([]models.WorkerInfo, 0, len(workers))
+	for _, worker := range workers {
+		if worker.LastSeenAt.IsZero() || worker.LastSeenAt.Before(cutoff) {
+			stale = append(stale, worker)
+			continue
+		}
+		active = append(active, worker)
+	}
+	return active, stale
+}
+
+func (m *Model) workerActiveCutoff(now time.Time) time.Time {
+	window := 90 * time.Second
+	interval := m.cfg.StatsInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	if candidate := interval * 6; candidate > window {
+		window = candidate
+	}
+	return now.Add(-window)
 }
 
 func (m *Model) statsPeriodicByNextRun() []models.PeriodicTask {
@@ -269,4 +327,14 @@ func (m *Model) workerCountValue() float64 {
 		return float64(count)
 	}
 	return math.NaN()
+}
+
+func (m *Model) referenceTime() time.Time {
+	if !m.lastStats.FetchedAt.IsZero() {
+		return m.lastStats.FetchedAt
+	}
+	if !m.lastScrapeAt.IsZero() {
+		return m.lastScrapeAt
+	}
+	return time.Now()
 }

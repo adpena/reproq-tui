@@ -14,6 +14,7 @@ type TUIConfig struct {
 	WorkerMetricsURL string
 	WorkerHealthURL  string
 	EventsURL        string
+	LowMemoryMode    bool
 }
 
 func FetchConfig(ctx context.Context, httpClient *client.Client, baseURL string) (TUIConfig, error) {
@@ -34,6 +35,7 @@ func FetchConfig(ctx context.Context, httpClient *client.Client, baseURL string)
 		WorkerMetricsURL string `json:"worker_metrics_url"`
 		WorkerHealthURL  string `json:"worker_health_url"`
 		EventsURL        string `json:"events_url"`
+		LowMemoryMode    bool   `json:"low_memory_mode"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return TUIConfig{}, err
@@ -43,5 +45,6 @@ func FetchConfig(ctx context.Context, httpClient *client.Client, baseURL string)
 		WorkerMetricsURL: strings.TrimSpace(payload.WorkerMetricsURL),
 		WorkerHealthURL:  strings.TrimSpace(payload.WorkerHealthURL),
 		EventsURL:        strings.TrimSpace(payload.EventsURL),
+		LowMemoryMode:    payload.LowMemoryMode,
 	}, nil
 }

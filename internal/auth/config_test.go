@@ -16,11 +16,12 @@ func TestFetchConfig(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/reproq/tui/config/":
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"worker_url":         "https://worker.example.com",
 				"worker_metrics_url": "https://worker.example.com/metrics",
 				"worker_health_url":  "https://worker.example.com/healthz",
 				"events_url":         "https://worker.example.com/events",
+				"low_memory_mode":    true,
 			})
 		default:
 			http.NotFound(w, r)
@@ -46,5 +47,8 @@ func TestFetchConfig(t *testing.T) {
 	}
 	if cfg.EventsURL != "https://worker.example.com/events" {
 		t.Fatalf("expected events url, got %q", cfg.EventsURL)
+	}
+	if !cfg.LowMemoryMode {
+		t.Fatal("expected low memory mode to be true")
 	}
 }

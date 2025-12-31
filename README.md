@@ -171,6 +171,10 @@ Recommended flow (single token everywhere):
 2) In `reproq-django`, set `METRICS_AUTH_TOKEN` for `/reproq/stats/` (use the same value for worker + stats).
 3) In `reproq-tui`, pass `--auth-token` or set `REPROQ_TUI_AUTH_TOKEN` (falls back to `METRICS_AUTH_TOKEN`).
 
+Single-secret shortcut: if `METRICS_AUTH_TOKEN` is unset, both reproq-worker and
+reproq-django will reuse `REPROQ_TUI_SECRET` as the bearer token, so you can
+secure metrics + TUI auth with just one shared secret.
+
 Custom headers:
 
 - Use `--header "X-Reproq-Token: <token>"` or `headers:` in the config file to send a non-Bearer header.
@@ -318,7 +322,9 @@ make build
 - Timeouts: increase `--timeout` or check network connectivity.
 - Missing metrics: map canonical keys in `docs/METRICS.md`.
 - Colors look off: set `--theme dark|light` or check terminal truecolor support.
+- Top line clipped: disable the terminal status bar overlay or set `REPROQ_TUI_SAFE_TOP=1` (auto-detected in Ghostty/iTerm).
 - Windows terminals: prefer Windows Terminal or a recent PowerShell with UTF-8.
+- Low-memory mode: if metrics/health/events return 503 with a low-memory hint, unset `LOW_MEMORY_MODE` on the server to re-enable them.
 
 ## License
 

@@ -17,28 +17,59 @@ func (m *Model) View() string {
 		return "loading..."
 	}
 	if m.authURLActive {
-		return m.renderAuthURLPrompt()
+		return m.applySafeTop(m.renderAuthURLPrompt())
 	}
 	if m.authFlowActive {
-		return m.renderAuthPrompt()
+		return m.applySafeTop(m.renderAuthPrompt())
 	}
 	if m.setupActive {
-		return m.renderSetup()
+		return m.applySafeTop(m.renderSetup())
 	}
 	if m.detailActive {
-		return m.renderDetails()
+		return m.applySafeTop(m.renderDetails())
 	}
 	if m.showHelp {
-		return m.renderHelp()
+		return m.applySafeTop(m.renderHelp())
 	}
-	top := m.renderStatusBar()
-	bottom := m.renderFooter()
-	mainHeight := m.height - lipgloss.Height(top) - lipgloss.Height(bottom)
+	statusBar := m.renderStatusBar()
+	hero := m.renderHero()
+	footer := m.renderFooter()
+
+	height := m.contentHeight()
+	mainHeight := height - lipgloss.Height(statusBar) - lipgloss.Height(hero) - lipgloss.Height(footer)
 	if mainHeight < 5 {
 		mainHeight = 5
 	}
 	main := m.renderMain(mainHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, top, main, bottom)
+	content := lipgloss.JoinVertical(lipgloss.Left, statusBar, hero, main, footer)
+	return m.applySafeTop(content)
+}
+
+func (m *Model) renderHero() string {
+	throughput := m.currentThroughput()
+	success := m.currentSuccessRatio()
+	errors := m.latestValue(seriesErrors)
+	latency := m.currentLatencyP95()
+
+	segments := []string{
+		m.heroSegment("THROUGHPUT", formatRate(throughput), m.theme.Styles.Accent),
+		m.heroSegment("AVAILABILITY", formatPercent(success), m.theme.Styles.AccentAlt),
+		m.heroSegment("FAILURE RATE", formatRate(errors), m.theme.Styles.StatusDown),
+		m.heroSegment("P95 LATENCY", formatDuration(time.Duration(latency*float64(time.Second))), m.theme.Styles.Muted),
+	}
+
+	hero := lipgloss.JoinHorizontal(lipgloss.Top, segments...)
+	return lipgloss.NewStyle().
+		MarginBottom(1).
+		Padding(0, 2).
+		Width(m.width).
+		Render(hero)
+}
+
+func (m *Model) heroSegment(label, value string, style lipgloss.Style) string {
+	l := m.theme.Styles.Muted.Render(label)
+	v := style.Copy().Bold(true).Render(value)
+	return lipgloss.JoinVertical(lipgloss.Left, l, v) + strings.Repeat(" ", 10)
 }
 
 func (m *Model) renderSetup() string {
@@ -68,14 +99,14 @@ func (m *Model) renderSetup() string {
 	lines = append(lines, "", m.theme.Styles.Muted.Render(footer))
 	content := strings.Join(lines, "\n")
 	card := m.theme.Styles.Card.Width(width).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
+	return m.placeCentered(card)
 }
 
 func (m *Model) renderHelp() string {
 	content := m.help.FullHelpView(m.keymap.FullHelp())
 	width := maxInt(20, minInt(60, m.width-4))
 	card := m.theme.Styles.Card.Width(width).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
+	return m.placeCentered(card)
 }
 
 func (m *Model) renderAuthURLPrompt() string {
@@ -92,7 +123,7 @@ func (m *Model) renderAuthURLPrompt() string {
 	lines = append(lines, "", m.theme.Styles.Muted.Render("enter to continue | esc to cancel"))
 	content := strings.Join(lines, "\n")
 	card := m.theme.Styles.Card.Width(width).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
+	return m.placeCentered(card)
 }
 
 func (m *Model) renderAuthPrompt() string {
@@ -116,12 +147,16 @@ func (m *Model) renderAuthPrompt() string {
 		lines = append(lines, m.theme.Styles.Muted.Render("Expires at "+m.authPair.ExpiresAt.Format("15:04:05")))
 	}
 	if m.authErr != nil {
-		lines = append(lines, "", m.theme.Styles.StatusWarn.Render(fmt.Sprintf("Error: %v", m.authErr)))
+		if isAuthError(m.authErr) {
+			lines = append(lines, "", m.theme.Styles.Muted.Render("Waiting for approval..."))
+		} else {
+			lines = append(lines, "", m.theme.Styles.StatusWarn.Render(fmt.Sprintf("Error: %v", m.authErr)))
+		}
 	}
 	lines = append(lines, "", m.theme.Styles.Muted.Render("esc to cancel"))
 	content := strings.Join(lines, "\n")
 	card := m.theme.Styles.Card.Width(width).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
+	return m.placeCentered(card)
 }
 
 func (m *Model) renderDetails() string {
@@ -131,9 +166,10 @@ func (m *Model) renderDetails() string {
 	footer := m.theme.Styles.Muted.Render("tab to switch | esc to close")
 	content := strings.Join([]string{m.theme.Styles.CardTitle.Render(title), body, "", footer}, "\n")
 	width := maxInt(30, minInt(70, m.width-6))
-	height := maxInt(10, minInt(20, m.height-6))
+	available := m.contentHeight()
+	height := maxInt(10, minInt(20, available-6))
 	card := m.theme.Styles.Card.Width(width).Height(height).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
+	return m.placeCentered(card)
 }
 
 func (m *Model) detailBody(view string) string {
@@ -193,6 +229,8 @@ func (m *Model) detailBody(view string) string {
 			fmt.Sprintf("Usage  %s", gauge),
 		}
 		workers := m.statsWorkersByRecent()
+		now := m.referenceTime()
+		active, stale := m.splitWorkersByStatus(workers, now)
 		lines = append(lines, "")
 		if len(workers) == 0 {
 			if m.statsAvailable() {
@@ -202,14 +240,30 @@ func (m *Model) detailBody(view string) string {
 			}
 			return strings.Join(lines, "\n")
 		}
-		lines = append(lines, "Recent workers")
-		for i, worker := range workers {
-			if i >= 5 {
-				break
+		if len(active) > 0 {
+			lines = append(lines, fmt.Sprintf("Active workers (%d)", len(active)))
+			for i, worker := range active {
+				if i >= 4 {
+					break
+				}
+				seen := formatTimestamp(worker.LastSeenAt)
+				line := fmt.Sprintf("%s (%s) c=%d %s", worker.WorkerID, worker.Hostname, worker.Concurrency, seen)
+				lines = append(lines, truncate(line, 60))
 			}
-			seen := formatTimestamp(worker.LastSeenAt)
-			line := fmt.Sprintf("%s (%s) c=%d %s", worker.WorkerID, worker.Hostname, worker.Concurrency, seen)
-			lines = append(lines, truncate(line, 60))
+		} else {
+			lines = append(lines, m.theme.Styles.Muted.Render("No active workers."))
+		}
+		if len(stale) > 0 {
+			lines = append(lines, "")
+			lines = append(lines, fmt.Sprintf("Stale workers (%d)", len(stale)))
+			for i, worker := range stale {
+				if i >= 3 {
+					break
+				}
+				seen := formatTimestamp(worker.LastSeenAt)
+				line := fmt.Sprintf("%s (%s) c=%d %s", worker.WorkerID, worker.Hostname, worker.Concurrency, seen)
+				lines = append(lines, m.theme.Styles.Muted.Render(truncate(line, 60)))
+			}
 		}
 		return strings.Join(lines, "\n")
 	case "Periodic":
@@ -220,20 +274,25 @@ func (m *Model) detailBody(view string) string {
 			}
 			return m.theme.Styles.Muted.Render("No Django stats configured.")
 		}
+		ref := m.referenceTime()
 		lines := []string{
-			m.labelValue("Total", formatCount(int64(len(periodic)))),
+			m.labelValue("Total tasks", formatCount(int64(len(periodic)))),
 			"",
 		}
 		for i, task := range periodic {
-			if i >= 6 {
+			if i >= 10 { // Show more tasks in detail view
 				break
 			}
-			next := formatTimestamp(task.NextRunAt)
-			line := fmt.Sprintf("%s  %s", task.Name, next)
+			next := formatScheduleDetailed(task.NextRunAt, ref)
+			statusIcon := m.theme.Styles.AccentAlt.Render("●")
 			if !task.Enabled {
-				line = m.theme.Styles.Muted.Render(line + " (disabled)")
+				statusIcon = m.theme.Styles.Muted.Render("○")
 			}
-			lines = append(lines, truncate(line, 60))
+			line := fmt.Sprintf("%s %-24s %s", statusIcon, truncate(task.Name, 24), next)
+			if !task.Enabled {
+				line = m.theme.Styles.Muted.Render(line)
+			}
+			lines = append(lines, line)
 		}
 		return strings.Join(lines, "\n")
 	case "Tasks":
@@ -262,6 +321,15 @@ func (m *Model) detailBody(view string) string {
 			m.labelValue("Success ratio", formatPercent(m.currentSuccessRatio())),
 			m.labelValue("Errors", formatRate(m.latestValue(seriesErrors))),
 			m.labelValue("P95 latency", formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second)))),
+		)
+		if m.statsAvailable() && len(m.lastStats.TopFailing) > 0 {
+			lines = append(lines, "", "Top Failing")
+			for _, task := range m.lastStats.TopFailing {
+				line := fmt.Sprintf("%-32s %s", truncate(task.TaskPath, 32), formatCount(task.Count))
+				lines = append(lines, m.theme.Styles.StatusDown.Render(line))
+			}
+		}
+		lines = append(lines,
 			"",
 			"Throughput trend",
 			bar,
@@ -303,6 +371,9 @@ func (m *Model) renderStatusBar() string {
 	if m.paused {
 		parts = append(parts, m.theme.Styles.Badge.Render("PAUSED"))
 	}
+	if m.lowMemoryMode {
+		parts = append(parts, m.theme.Styles.StatusWarn.Render("LOW MEMORY"))
+	}
 	if host := m.workerHost(); host != "" {
 		worker := fmt.Sprintf("%s %s", m.theme.Styles.Muted.Render("worker"), m.theme.Styles.AccentAlt.Render(host))
 		parts = append(parts, worker)
@@ -313,8 +384,12 @@ func (m *Model) renderStatusBar() string {
 	if m.lastHealth.Build != "" {
 		parts = append(parts, m.theme.Styles.Muted.Render(m.lastHealth.Build))
 	}
-	scrape := fmt.Sprintf("scrape %s (%s)", formatRelative(m.lastScrapeAt), formatDuration(m.lastScrapeDelay))
-	parts = append(parts, m.theme.Styles.Muted.Render(scrape))
+	if m.lastScrapeAt.IsZero() {
+		parts = append(parts, m.theme.Styles.Muted.Render("scrape pending"))
+	} else {
+		scrape := fmt.Sprintf("scrape %s (%s)", formatRelative(m.lastScrapeAt), formatDuration(m.lastScrapeDelay))
+		parts = append(parts, m.theme.Styles.Muted.Render(scrape))
+	}
 	if m.lastScrapeErr != nil {
 		parts = append(parts, m.theme.Styles.StatusWarn.Render("metrics err"))
 	}
@@ -329,7 +404,7 @@ func (m *Model) renderStatusBar() string {
 }
 
 func (m *Model) renderMain(height int) string {
-	gap := 1
+	gap := 4
 	leftW, centerW, rightW := m.columnWidths(gap)
 
 	left := m.renderLeftPane(leftW, height)
@@ -343,11 +418,12 @@ func (m *Model) renderMain(height int) string {
 
 func (m *Model) renderLeftPane(width, height int) string {
 	loading := m.lastScrapeAt.IsZero()
-	spinnerView := m.spinner.View()
+	ref := m.referenceTime()
+	updatedAt := maxTime(m.lastScrapeAt, m.lastStatsAt)
 
 	queueDepth := m.queueDepthValue()
-	running := m.runningCountValue()
 	workerCount := m.workerCountValue()
+
 	queueCount := "-"
 	if count, ok := m.statsQueueCount(); ok {
 		queueCount = formatCount(count)
@@ -356,31 +432,66 @@ func (m *Model) renderLeftPane(width, height int) string {
 	if count, ok := m.statsPeriodicCount(); ok {
 		periodicCount = formatCount(count)
 	}
+	nextPeriodic := "-"
+	if next, ok := m.statsNextPeriodic(); ok {
+		nextPeriodic = formatScheduleAt(next.NextRunAt, ref)
+	}
+	activeWorkers := "-"
+	staleWorkers := "-"
+	if active, stale, ok := m.statsWorkerStatusCounts(); ok {
+		activeWorkers = formatCount(int64(active))
+		staleWorkers = formatCount(int64(stale))
+	}
 
 	val := func(v string) string {
 		if loading {
-			return spinnerView
+			return "..."
 		}
 		return v
 	}
 
-	lines := []string{
+	lines := []string{}
+	if m.lowMemoryMode {
+		lines = append(lines, m.theme.Styles.StatusWarn.Render("Low memory mode enabled — metrics/events unavailable."), "")
+	}
+	if loading {
+		lines = append(lines, m.theme.Styles.Muted.Render("Waiting for first scrape..."))
+	}
+
+	// Task Status Summary
+	readyCount, _ := m.statsTaskCount("READY")
+	waitingCount, _ := m.statsWaitingCount()
+	runningCount, _ := m.statsTaskCount("RUNNING")
+	failedCount, _ := m.statsTaskCount("FAILED")
+
+	lines = append(lines,
+		m.theme.Styles.PaneHeader.Render("TASKS"),
 		m.labelValue("Queue depth", val(formatNumber(queueDepth))),
-		m.labelValue("Running", val(formatNumber(running))),
-		m.labelValue("Throughput", val(formatRate(m.currentThroughput()))),
-		m.labelValue("Errors", val(formatRate(m.latestValue(seriesErrors)))),
-		m.labelValue("Success", val(formatPercent(m.currentSuccessRatio()))),
-		m.labelValue("Workers", val(formatNumber(workerCount))),
-		m.labelValue("Queues", val(queueCount)),
-		m.labelValue("Periodic", val(periodicCount)),
+		m.labelValue("Ready", val(formatCount(readyCount+waitingCount))),
+		m.labelValue("Running", val(formatCount(runningCount))),
+		m.labelValue("Failed", val(formatCount(failedCount))),
+		"",
+		m.theme.Styles.PaneHeader.Render("WORKERS"),
+		m.labelValue("Total", val(formatNumber(workerCount))),
+		m.labelValue("Active", val(activeWorkers)),
+		m.labelValue("Stale", val(staleWorkers)),
 		m.labelValue("Concurrency", val(fmt.Sprintf("%s/%s",
 			formatNumber(m.latestValue(metrics.MetricConcurrencyInUse)),
 			formatNumber(m.latestValue(metrics.MetricConcurrencyLimit)),
 		))),
-		m.labelValue("P95 latency", val(formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second))))),
-	}
+		"",
+		m.theme.Styles.PaneHeader.Render("SYSTEM"),
+		m.labelValue("Worker Mem", val(formatBytes(m.latestValue(metrics.MetricWorkerMemUsage)))),
+		m.labelValue("DB Pool", val(fmt.Sprintf("%.0f", m.latestValue(metrics.MetricDBPoolConnections)))),
+		m.labelValue("DB Wait", val(formatCount(int64(m.latestValue(metrics.MetricDBPoolWait))))),
+		"",
+		m.theme.Styles.PaneHeader.Render("PERIODIC"),
+		m.labelValue("Count", val(periodicCount)),
+		m.labelValue("Queues", val(queueCount)),
+		m.labelValue("Next up", val(nextPeriodic)),
+	)
 	body := strings.Join(lines, "\n")
-	card := m.card("Now", body, width, height, m.focus == focusLeft)
+	card := m.card("OBSERVABILITY", body, width, height, m.focus == focusLeft, updatedAt)
 	return card
 }
 
@@ -389,7 +500,6 @@ func (m *Model) renderCenterPane(width, height int) string {
 	cardHeight := maxInt(6, (height-gap)/2)
 	chartWidth := maxInt(10, width-6)
 	loading := m.lastScrapeAt.IsZero()
-	spinnerView := m.spinner.View()
 
 	throughput := m.seriesValues(seriesThroughput)
 	queueDepth := m.seriesValues(metrics.MetricQueueDepth)
@@ -398,25 +508,28 @@ func (m *Model) renderCenterPane(width, height int) string {
 
 	val := func(v string) string {
 		if loading {
-			return spinnerView
+			return "..."
 		}
 		return v
 	}
 
-	chart := func(c string) string {
+	renderSparkline := func(values []float64, style lipgloss.Style) string {
 		if loading {
-			return "\n\n  " + m.theme.Styles.Muted.Render("Waiting for metrics...")
+			return m.loadingOverlay(chartWidth)
 		}
-		return c
+		if len(values) == 0 {
+			return m.theme.Styles.Muted.Render("No data yet")
+		}
+		return style.Render(charts.Sparkline(values, chartWidth))
 	}
 
-	first := m.chartCard("Throughput", val(formatRate(m.currentThroughput())), chart(charts.Sparkline(throughput, chartWidth)), width, cardHeight, m.focus == focusCenter)
-	second := m.chartCard("Queue depth", val(formatNumber(m.latestValue(metrics.MetricQueueDepth))), chart(charts.Sparkline(queueDepth, chartWidth)), width, cardHeight, false)
+	first := m.chartCard("Throughput", val(formatRate(m.currentThroughput())), renderSparkline(throughput, m.theme.Styles.Accent), width, cardHeight, m.focus == focusCenter, m.lastScrapeAt)
+	second := m.chartCard("Queue depth", val(formatNumber(m.latestValue(metrics.MetricQueueDepth))), renderSparkline(queueDepth, m.theme.Styles.AccentAlt), width, cardHeight, false, m.lastScrapeAt)
 
 	remaining := height - (cardHeight*2 + gap)
 	if remaining >= cardHeight {
-		third := m.chartCard("Errors", val(formatRate(m.latestValue(seriesErrors))), chart(charts.Sparkline(errors, chartWidth)), width, cardHeight, false)
-		fourth := m.chartCard("P95 latency", val(formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second)))), chart(charts.Sparkline(latency, chartWidth)), width, cardHeight, false)
+		third := m.chartCard("Errors", val(formatRate(m.latestValue(seriesErrors))), renderSparkline(errors, m.theme.Styles.StatusWarn), width, cardHeight, false, m.lastScrapeAt)
+		fourth := m.chartCard("P95 latency", val(formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second)))), renderSparkline(latency, m.theme.Styles.Muted), width, cardHeight, false, m.lastScrapeAt)
 		return lipgloss.JoinVertical(lipgloss.Left, first, strings.Repeat("\n", gap), second, strings.Repeat("\n", gap), third, strings.Repeat("\n", gap), fourth)
 	}
 
@@ -424,7 +537,8 @@ func (m *Model) renderCenterPane(width, height int) string {
 }
 
 func (m *Model) renderRightPane(width, height int) string {
-	header := m.theme.Styles.PaneHeader.Width(width).Render("Events")
+	status := m.eventsStatus()
+	header := m.theme.Styles.PaneHeader.Width(width).Render(joinRight("Events", status, width))
 	lines := m.renderEvents(width, height-1)
 	body := strings.Join(lines, "\n")
 	cardStyle := m.theme.Styles.Card
@@ -511,7 +625,27 @@ func (m *Model) workerHost() string {
 	return parsed.Path
 }
 
+func (m *Model) eventsHost() string {
+	if m.eventsBaseURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(m.eventsBaseURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.Host != "" {
+		return parsed.Host
+	}
+	return parsed.Path
+}
+
 func (m *Model) renderEvents(width, height int) []string {
+	if m.lowMemoryMode {
+		return []string{
+			m.theme.Styles.StatusWarn.Render("Low memory mode enabled."),
+			m.theme.Styles.Muted.Render("Events are disabled."),
+		}
+	}
 	if !m.eventsEnabled {
 		return []string{m.theme.Styles.Muted.Render("No events stream configured")}
 	}
@@ -534,12 +668,35 @@ func (m *Model) renderEvents(width, height int) []string {
 		filtered = append(filtered, truncate(line, width-2))
 	}
 	if len(filtered) == 0 {
-		filtered = append(filtered, m.theme.Styles.Muted.Render("No events"))
+		if m.lastScrapeAt.IsZero() {
+			filtered = append(filtered, m.theme.Styles.Muted.Render("Waiting for events..."))
+		} else {
+			filtered = append(filtered, m.theme.Styles.Muted.Render("No events yet"))
+		}
+		if host := m.eventsHost(); host != "" {
+			filtered = append(filtered, m.theme.Styles.Muted.Render("Listening on "+host))
+		}
 	}
 	if len(filtered) > height {
 		filtered = filtered[len(filtered)-height:]
 	}
 	return filtered
+}
+
+func (m *Model) eventsStatus() string {
+	if m.lowMemoryMode {
+		return m.theme.Styles.StatusWarn.Render("low memory")
+	}
+	if !m.eventsEnabled {
+		return m.theme.Styles.Muted.Render("disabled")
+	}
+	if !m.lastEventAt.IsZero() {
+		return m.theme.Styles.Muted.Render("last " + formatTimestamp(m.lastEventAt))
+	}
+	if m.lastScrapeAt.IsZero() {
+		return m.theme.Styles.Muted.Render("connecting")
+	}
+	return m.theme.Styles.Muted.Render("listening")
 }
 
 func (m *Model) matchFilter(event models.Event) bool {
@@ -570,8 +727,9 @@ func flattenMeta(meta map[string]string) string {
 	return strings.Join(parts, " ")
 }
 
-func (m *Model) chartCard(title, value, chart string, width, height int, focused bool) string {
-	header := fmt.Sprintf("%s  %s", m.theme.Styles.CardTitle.Render(title), m.theme.Styles.Muted.Render(value))
+func (m *Model) chartCard(title, value, chart string, width, height int, focused bool, updatedAt time.Time) string {
+	innerWidth := maxInt(10, width-6)
+	header := m.cardHeader(title, value, updatedAt, innerWidth)
 	body := strings.Join([]string{header, chart}, "\n")
 	cardStyle := m.theme.Styles.Card
 	if focused {
@@ -580,8 +738,9 @@ func (m *Model) chartCard(title, value, chart string, width, height int, focused
 	return cardStyle.Width(width).Height(height).Render(body)
 }
 
-func (m *Model) card(title, body string, width, height int, focused bool) string {
-	header := m.theme.Styles.CardTitle.Render(title)
+func (m *Model) card(title, body string, width, height int, focused bool, updatedAt time.Time) string {
+	innerWidth := maxInt(10, width-6)
+	header := m.cardHeader(title, "", updatedAt, innerWidth)
 	content := strings.Join([]string{header, body}, "\n")
 	cardStyle := m.theme.Styles.Card
 	if focused {
@@ -593,10 +752,36 @@ func (m *Model) card(title, body string, width, height int, focused bool) string
 func (m *Model) labelValue(label, value string) string {
 	padded := fmt.Sprintf("%-14s", label)
 	labelText := m.theme.Styles.Muted.Render(padded)
-	if value == "-" {
-		return fmt.Sprintf("%s %s", labelText, m.theme.Styles.Muted.Render(value))
+	return fmt.Sprintf("%s %s", labelText, m.renderValue(value))
+}
+
+func (m *Model) cardHeader(title, value string, updatedAt time.Time, width int) string {
+	left := m.theme.Styles.CardTitle.Render(title)
+	if value != "" {
+		left = fmt.Sprintf("%s  %s", left, m.renderValue(value))
 	}
-	return fmt.Sprintf("%s %s", labelText, m.theme.Styles.Accent.Render(value))
+	right := m.updatedText(updatedAt)
+	if right == "" {
+		return left
+	}
+	return joinRight(left, right, width)
+}
+
+func (m *Model) updatedText(ts time.Time) string {
+	if ts.IsZero() {
+		return m.theme.Styles.Muted.Render("upd -")
+	}
+	return m.theme.Styles.Muted.Render("upd " + formatTimestamp(ts))
+}
+
+func (m *Model) renderValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	switch trimmed {
+	case "", "-", "...":
+		return m.theme.Styles.Muted.Render(value)
+	default:
+		return m.theme.Styles.Value.Render(value)
+	}
 }
 
 func joinRight(left, right string, width int) string {
@@ -645,6 +830,51 @@ func (m *Model) columnWidths(gap int) (int, int, int) {
 		center = m.width - left - gap
 	}
 	return left, maxInt(20, center), right
+}
+
+func (m *Model) loadingOverlay(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line := strings.Repeat(".", width)
+	label := "loading " + m.spinner.View()
+	label = truncate(label, width)
+	return strings.Join([]string{
+		m.theme.Styles.Muted.Render(line),
+		m.theme.Styles.Muted.Render(label),
+	}, "\n")
+}
+
+func maxTime(values ...time.Time) time.Time {
+	var latest time.Time
+	for _, value := range values {
+		if value.After(latest) {
+			latest = value
+		}
+	}
+	return latest
+}
+
+func (m *Model) contentHeight() int {
+	if m.safeTop <= 0 {
+		return m.height
+	}
+	height := m.height - m.safeTop
+	if height < 1 {
+		return m.height
+	}
+	return height
+}
+
+func (m *Model) applySafeTop(view string) string {
+	if m.safeTop <= 0 {
+		return view
+	}
+	return strings.Repeat("\n", m.safeTop) + view
+}
+
+func (m *Model) placeCentered(content string) string {
+	return lipgloss.Place(m.width, m.contentHeight(), lipgloss.Center, lipgloss.Center, content)
 }
 
 func minInt(a, b int) int {

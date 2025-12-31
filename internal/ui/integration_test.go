@@ -22,7 +22,7 @@ func TestHeadlessUpdateLoop(t *testing.T) {
 	cfg.EventsURL = ""
 	cfg.DjangoStatsURL = server.StatsURL
 
-	model := NewModel(cfg)
+	model := newTestModel(t, cfg)
 	defer model.Close()
 
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
