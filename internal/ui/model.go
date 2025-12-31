@@ -280,7 +280,7 @@ func (m *Model) applyInputStyles() {
 		input.PromptStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Muted)
 		input.TextStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Text)
 		input.PlaceholderStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Muted)
-		input.CursorStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Accent)
+		input.Cursor.Style = lipgloss.NewStyle().Foreground(m.theme.Palette.Accent)
 	}
 	set(&m.filterInput)
 	set(&m.setupWorkerURL)
