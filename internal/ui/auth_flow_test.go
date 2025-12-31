@@ -46,14 +46,17 @@ func TestAuthURLPromptLifecycle(t *testing.T) {
 	if model.authURLActive {
 		t.Fatalf("expected prompt to close on valid url")
 	}
-	if !model.authFlowActive {
-		t.Fatalf("expected auth flow to start")
-	}
 	if model.cfg.DjangoURL != "https://django.example.com" {
 		t.Fatalf("unexpected django url: %s", model.cfg.DjangoURL)
 	}
 	if model.cfg.DjangoStatsURL != "https://django.example.com/reproq/stats/" {
 		t.Fatalf("unexpected stats url: %s", model.cfg.DjangoStatsURL)
+	}
+
+	updated, _ = model.Update(tuiConfigMsg{cfg: auth.TUIConfig{}})
+	model = updated.(*Model)
+	if !model.authFlowActive {
+		t.Fatalf("expected auth flow to start after config fetch")
 	}
 }
 

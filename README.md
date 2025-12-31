@@ -45,8 +45,9 @@ https://github.com/adpena/reproq-tui/releases
 Recommended (one-time setup + auto-login):
 
 1) Set `REPROQ_TUI_SECRET` on reproq-django (and reproq-worker if you want JWT auth for `/metrics`).
-2) Run `reproq-tui setup --worker-url http://localhost:9100 --django-url http://localhost:8000`.
-3) Run `reproq-tui dashboard` (auto-loads the generated config).
+2) (Optional) Set `REPROQ_TUI_WORKER_URL` on reproq-django to auto-share the worker base URL.
+3) Run `reproq-tui` and follow the prompts (Django URL → login → worker URL).
+4) Re-run `reproq-tui` anytime; it auto-loads the saved config.
 
 Run the dashboard (base URL):
 
@@ -59,6 +60,11 @@ Or use the full metrics URL:
 ```
 reproq-tui dashboard --worker-metrics-url http://localhost:9100/metrics
 ```
+
+If you run `reproq-tui` or `reproq-tui dashboard` without a worker URL, the TUI
+starts an interactive setup flow: it prompts for your Django URL, kicks off
+login, then asks for the worker URL or `/metrics` (unless Django provides it
+via `/reproq/tui/config/`). The config is saved to the default path automatically.
 
 Minimal env-based setup:
 
@@ -106,7 +112,8 @@ Demo mode emits `reproq_*` metrics that match the default catalog.
 
 - Set `REPROQ_TUI_SECRET` on reproq-django (and reproq-worker if you want TUI login to authorize `/metrics`).
 - Ensure the worker `/metrics`, `/healthz`, and `/events` are reachable from your machine.
-- Run `reproq-tui setup --worker-url http://worker:9100 --django-url http://django:8000`.
+- Optional: set `REPROQ_TUI_WORKER_URL` (or `REPROQ_TUI_WORKER_METRICS_URL`) on reproq-django so the TUI can auto-configure the worker endpoints.
+- Run `reproq-tui` and paste your Django URL, then the worker URL.
 - Launch the dashboard and sign in when prompted (press `l` to login/logout). The config file is auto-loaded.
 
 Automation script:
@@ -130,6 +137,11 @@ Configure a single secret in Django (and optionally the worker), then sign in on
 
 The TUI stores the token locally and reuses it on restart until you log out (`l`).
 Stored tokens live in `~/.config/reproq-tui/auth.json` (override with `REPROQ_TUI_AUTH_FILE`).
+If you set `REPROQ_TUI_WORKER_URL` (or `REPROQ_TUI_WORKER_METRICS_URL`) in Django, the pairing
+response includes worker endpoints so the TUI can auto-configure after you enter the Django URL.
+By default Django also serves `/reproq/tui/config/` and proxy endpoints (`/reproq/tui/metrics/`,
+`/reproq/tui/healthz/`, `/reproq/tui/events/`) so the TUI can configure everything from the
+base website URL.
 If your stats endpoint is not `/reproq/stats/`, set `--django-url` explicitly (use the base URL without `/reproq`).
 If `--django-url` is not set, press `l` and paste the Django base URL (https optional; backslashes are normalized).
 
@@ -174,7 +186,7 @@ canonical metrics to your worker's metric names via `--metric` or the config fil
 Flags (selected):
 
 - `--worker-url` (base URL; derives `/metrics` and `/healthz`)
-- `--worker-metrics-url` (required unless `--worker-url` is set)
+- `--worker-metrics-url` (optional; if neither worker URL is set, the TUI prompts)
 - `--worker-health-url`
 - `--events-url`
 - `--django-url`

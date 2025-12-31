@@ -22,6 +22,7 @@ import (
 	"github.com/adpena/reproq-tui/pkg/client"
 	"github.com/adpena/reproq-tui/pkg/models"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -65,6 +66,11 @@ type authStatusMsg struct {
 
 type authTickMsg struct{}
 
+type tuiConfigMsg struct {
+	cfg auth.TUIConfig
+	err error
+}
+
 type snapshotSavedMsg struct {
 	path string
 	err  error
@@ -79,6 +85,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if m.setupActive {
+			return m.handleSetupInput(msg)
+		}
 		if m.authURLActive {
 			return m.handleAuthURLInput(msg)
 		}
@@ -87,6 +96,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleKey(msg)
 	case metricsMsg:
+		if m.setupActive {
+			return m, nil
+		}
 		m.lastScrapeAt = msg.attempted
 		m.lastScrapeDelay = msg.latency
 		m.lastScrapeErr = msg.err
@@ -111,6 +123,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case healthMsg:
+		if m.setupActive {
+			return m, nil
+		}
 		m.lastHealth = msg.status
 		m.lastHealthErr = msg.err
 		autoLogin := m.noteAuthError(msg.err)
@@ -128,6 +143,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case statsMsg:
+		if m.setupActive {
+			return m, nil
+		}
 		m.lastStatsAt = msg.attempted
 		m.lastStatsDelay = msg.latency
 		m.lastStatsErr = msg.err
@@ -149,17 +167,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case metricsTickMsg:
-		if m.paused {
+		if m.paused || m.setupActive || m.cfg.WorkerMetricsURL == "" {
 			return m, nil
 		}
 		return m, pollMetricsCmd(m.cfg, m.client, m.catalog)
 	case healthTickMsg:
-		if m.paused || m.cfg.WorkerHealthURL == "" {
+		if m.paused || m.setupActive || m.cfg.WorkerHealthURL == "" {
 			return m, nil
 		}
 		return m, pollHealthCmd(m.cfg, m.client)
 	case statsTickMsg:
-		if m.paused || !m.statsEnabled {
+		if m.paused || m.setupActive || !m.statsEnabled {
 			return m, nil
 		}
 		return m, pollStatsCmd(m.cfg, m.client)
@@ -183,9 +201,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authPair = msg.pair
 		m.authFlowActive = true
 		m.authErr = nil
-		return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+		tick := tea.Tick(time.Second, func(time.Time) tea.Msg {
 			return authTickMsg{}
 		})
+		autoCmd := m.applyWorkerConfigFromPair(msg.pair)
+		if autoCmd != nil {
+			return m, tea.Batch(tick, autoCmd)
+		}
+		return m, tick
+	case tuiConfigMsg:
+		var cmds []tea.Cmd
+		if msg.err != nil {
+			if !client.IsStatus(msg.err, http.StatusNotFound) {
+				m.toast = fmt.Sprintf("Config fetch failed: %v", msg.err)
+				m.toastExpiry = time.Now().Add(3 * time.Second)
+				cmds = append(cmds, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+					return toastClearMsg{}
+				}))
+			}
+		} else {
+			if cmd := m.applyWorkerConfigFromConfig(msg.cfg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.cfg.AutoLogin && m.authHeaderManaged && m.authEnabled && m.authToken.Value == "" && !m.authFlowActive {
+			m.authFlowActive = true
+			m.authPair = auth.Pairing{}
+			cmds = append(cmds, startAuthCmd(m.cfg, m.client))
+		}
+		if len(cmds) == 0 {
+			return m, nil
+		}
+		return m, tea.Batch(cmds...)
 	case authTickMsg:
 		if !m.authFlowActive {
 			return m, nil
@@ -225,8 +272,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}),
 			}
 			if !m.paused {
-				cmds = append(cmds, pollMetricsCmd(m.cfg, m.client, m.catalog))
-				cmds = append(cmds, pollHealthCmd(m.cfg, m.client))
+				if m.cfg.WorkerMetricsURL != "" {
+					cmds = append(cmds, pollMetricsCmd(m.cfg, m.client, m.catalog))
+				}
+				if m.cfg.WorkerHealthURL != "" {
+					cmds = append(cmds, pollHealthCmd(m.cfg, m.client))
+				}
 				if m.statsEnabled {
 					cmds = append(cmds, pollStatsCmd(m.cfg, m.client))
 				}
@@ -260,6 +311,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast = ""
 		}
 		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -283,6 +338,60 @@ func (m *Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) handleSetupInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+	}
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEsc:
+		return m, tea.Quit
+	case tea.KeyTab:
+		m.toggleSetupStage()
+		return m, nil
+	case tea.KeyShiftTab:
+		m.toggleSetupStage()
+		return m, nil
+	case tea.KeyEnter:
+		if m.setupStage == setupDjango {
+			raw := strings.TrimSpace(m.setupDjangoURL.Value())
+			if raw == "" {
+				m.setupNotice = "Django skipped. You can connect later with l."
+				m.setupStage = setupWorker
+				m.setupDjangoURL.Blur()
+				m.setupWorkerURL.Focus()
+				return m, nil
+			}
+			normalized, err := normalizeDjangoURLInput(raw)
+			if err != nil {
+				m.setupNotice = "Enter a valid Django URL"
+				return m, nil
+			}
+			m.setupNotice = ""
+			m.setupStage = setupWorker
+			m.setupDjangoURL.Blur()
+			m.setupWorkerURL.Focus()
+			return m, m.applyDjangoSetup(normalized)
+		}
+		workerURL, err := normalizeBaseURLInput(m.setupWorkerURL.Value())
+		if err != nil {
+			m.setupNotice = "Enter a valid worker URL or /metrics endpoint"
+			return m, nil
+		}
+		return m, m.applyWorkerSetup(workerURL)
+	}
+
+	var cmd tea.Cmd
+	if m.setupStage == setupDjango {
+		m.setupDjangoURL, cmd = m.setupDjangoURL.Update(msg)
+	} else {
+		m.setupWorkerURL, cmd = m.setupWorkerURL.Update(msg)
+	}
+	return m, cmd
+}
+
 func (m *Model) handleAuthURLInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
@@ -303,18 +412,10 @@ func (m *Model) handleAuthURLInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.authURLNotice = "Enter a valid Django URL (https:// optional)"
 			return m, nil
 		}
-		m.cfg.DjangoURL = normalized
-		if m.cfg.DjangoStatsURL == "" {
-			m.cfg.DjangoStatsURL = config.DeriveDjangoStatsURL(normalized)
-		}
-		m.authEnabled = strings.TrimSpace(m.cfg.DjangoURL) != ""
-		m.statsEnabled = m.cfg.DjangoStatsURL != ""
 		m.authURLActive = false
 		m.authURLNotice = ""
 		m.authURLInput.Blur()
-		m.authFlowActive = true
-		m.authPair = auth.Pairing{}
-		return m, startAuthCmd(m.cfg, m.client)
+		return m, m.applyDjangoSetup(normalized)
 	}
 	var cmd tea.Cmd
 	m.authURLInput, cmd = m.authURLInput.Update(msg)
@@ -405,6 +506,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keymap.ToggleTheme):
 		m.cfg.Theme = toggleTheme(m.cfg.Theme)
 		m.theme = theme.Resolve(m.cfg.Theme)
+		m.applyInputStyles()
 		return m, nil
 	case key.Matches(msg, m.keymap.Snapshot):
 		return m, exportSnapshotCmd(m)
@@ -459,7 +561,122 @@ func toggleTheme(current string) string {
 	}
 }
 
-func normalizeDjangoURLInput(raw string) (string, error) {
+func (m *Model) toggleSetupStage() {
+	if !m.setupActive {
+		return
+	}
+	if m.setupStage == setupDjango {
+		m.setupStage = setupWorker
+		m.setupDjangoURL.Blur()
+		m.setupWorkerURL.Focus()
+	} else {
+		m.setupStage = setupDjango
+		m.setupWorkerURL.Blur()
+		m.setupDjangoURL.Focus()
+	}
+}
+
+func (m *Model) applyDjangoSetup(djangoURL string) tea.Cmd {
+	m.cfg.DjangoURL = djangoURL
+	if m.cfg.DjangoStatsURL == "" {
+		m.cfg.DjangoStatsURL = config.DeriveDjangoStatsURL(djangoURL)
+	}
+	m.statsEnabled = m.cfg.DjangoStatsURL != ""
+	m.authEnabled = strings.TrimSpace(djangoURL) != ""
+	if m.authToken.Value != "" && m.authToken.DjangoURL != "" && !strings.EqualFold(m.authToken.DjangoURL, djangoURL) {
+		_ = m.clearAuthToken()
+	}
+	return fetchTUIConfigCmd(m.cfg, m.client)
+}
+
+func (m *Model) applyWorkerSetup(workerURL string) tea.Cmd {
+	m.setupActive = false
+	m.setupStage = setupNone
+	m.setupNotice = ""
+	m.setupWorkerURL.Blur()
+	m.setupDjangoURL.Blur()
+
+	baseWorkerURL, metricsURL := splitWorkerInput(workerURL)
+	m.cfg.WorkerURL = baseWorkerURL
+	if m.cfg.WorkerMetricsURL == "" {
+		m.cfg.WorkerMetricsURL = metricsURL
+	}
+	if m.cfg.WorkerHealthURL == "" {
+		m.cfg.WorkerHealthURL = config.DeriveHealthURL(m.cfg.WorkerMetricsURL)
+	}
+	if m.cfg.EventsURL == "" {
+		m.cfg.EventsURL = deriveEventsURL(baseWorkerURL)
+	}
+	m.eventsBaseURL = m.cfg.EventsURL
+	m.eventsURL = m.cfg.EventsURL
+	m.eventsEnabled = m.cfg.EventsURL != ""
+	if m.eventsEnabled {
+		m.startEvents()
+	}
+
+	m.persistSetupConfig()
+	cmd := m.startPollingCmds()
+	if m.cfg.AutoLogin && m.authHeaderManaged && m.authEnabled && m.authToken.Value == "" && !m.authFlowActive {
+		m.authFlowActive = true
+		m.authPair = auth.Pairing{}
+		if cmd == nil {
+			return startAuthCmd(m.cfg, m.client)
+		}
+		return tea.Batch(cmd, startAuthCmd(m.cfg, m.client))
+	}
+	return cmd
+}
+
+func (m *Model) applyWorkerConfigFromConfig(cfg auth.TUIConfig) tea.Cmd {
+	if m.cfg.WorkerMetricsURL != "" || m.cfg.WorkerURL != "" {
+		return nil
+	}
+	candidate := strings.TrimSpace(cfg.WorkerURL)
+	if candidate == "" {
+		candidate = strings.TrimSpace(cfg.WorkerMetricsURL)
+	}
+	if candidate == "" {
+		return nil
+	}
+	if cfg.WorkerMetricsURL != "" {
+		m.cfg.WorkerMetricsURL = strings.TrimSpace(cfg.WorkerMetricsURL)
+	}
+	if cfg.WorkerHealthURL != "" {
+		m.cfg.WorkerHealthURL = strings.TrimSpace(cfg.WorkerHealthURL)
+	}
+	if cfg.EventsURL != "" {
+		m.cfg.EventsURL = strings.TrimSpace(cfg.EventsURL)
+	}
+	return m.applyWorkerSetup(candidate)
+}
+
+func (m *Model) applyWorkerConfigFromPair(pair auth.Pairing) tea.Cmd {
+	if !m.setupActive || m.setupStage != setupWorker {
+		return nil
+	}
+	if m.cfg.WorkerMetricsURL != "" || m.cfg.WorkerURL != "" {
+		return nil
+	}
+	candidate := strings.TrimSpace(pair.WorkerURL)
+	if candidate == "" {
+		candidate = strings.TrimSpace(pair.WorkerMetricsURL)
+	}
+	if candidate == "" {
+		return nil
+	}
+	if pair.WorkerMetricsURL != "" {
+		m.cfg.WorkerMetricsURL = strings.TrimSpace(pair.WorkerMetricsURL)
+	}
+	if pair.WorkerHealthURL != "" {
+		m.cfg.WorkerHealthURL = strings.TrimSpace(pair.WorkerHealthURL)
+	}
+	if pair.EventsURL != "" {
+		m.cfg.EventsURL = strings.TrimSpace(pair.EventsURL)
+	}
+	return m.applyWorkerSetup(candidate)
+}
+
+func normalizeBaseURLInput(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", fmt.Errorf("empty url")
@@ -501,11 +718,98 @@ func normalizeDjangoURLInput(raw string) (string, error) {
 	}
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
-	normalized := config.DeriveDjangoURL(parsed.String())
+	return parsed.String(), nil
+}
+
+func normalizeDjangoURLInput(raw string) (string, error) {
+	normalized, err := normalizeBaseURLInput(raw)
+	if err != nil {
+		return "", err
+	}
+	normalized = config.DeriveDjangoURL(normalized)
 	if normalized == "" {
 		return "", fmt.Errorf("invalid url")
 	}
 	return normalized, nil
+}
+
+func (m *Model) persistSetupConfig() {
+	if !m.setupPersist || m.setupPersisted {
+		return
+	}
+	path, err := config.ResolveConfigPath()
+	if err != nil {
+		m.toast = fmt.Sprintf("Config save failed: %v", err)
+		m.toastExpiry = time.Now().Add(3 * time.Second)
+		m.setupPersisted = true
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		m.setupPersisted = true
+		return
+	} else if !os.IsNotExist(err) {
+		m.toast = fmt.Sprintf("Config save failed: %v", err)
+		m.toastExpiry = time.Now().Add(3 * time.Second)
+		m.setupPersisted = true
+		return
+	}
+	if err := config.WriteMinimalConfig(path, m.cfg); err != nil {
+		m.toast = fmt.Sprintf("Config save failed: %v", err)
+	} else {
+		m.toast = fmt.Sprintf("Saved config to %s", path)
+	}
+	m.toastExpiry = time.Now().Add(3 * time.Second)
+	m.setupPersisted = true
+}
+
+func deriveEventsURL(workerURL string) string {
+	if workerURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(workerURL)
+	if err != nil {
+		return ""
+	}
+	parsed.Path = joinPath(parsed.Path, "/events")
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func joinPath(basePath, suffix string) string {
+	if suffix == "" {
+		return basePath
+	}
+	basePath = strings.TrimSuffix(basePath, "/")
+	if basePath == "" {
+		return suffix
+	}
+	if !strings.HasPrefix(suffix, "/") {
+		suffix = "/" + suffix
+	}
+	return basePath + suffix
+}
+
+func splitWorkerInput(raw string) (string, string) {
+	if raw == "" {
+		return "", ""
+	}
+	baseURL := raw
+	metricsURL := config.DeriveMetricsURL(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return baseURL, metricsURL
+	}
+	path := strings.TrimSuffix(parsed.Path, "/")
+	if strings.HasSuffix(path, "/metrics") {
+		basePath := strings.TrimSuffix(path, "/metrics")
+		parsed.Path = basePath
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		baseURL = parsed.String()
+		metricsURL = raw
+	}
+	return baseURL, metricsURL
 }
 
 func pollMetricsCmd(cfg config.Config, httpClient *client.Client, catalog metrics.Catalog) tea.Cmd {
@@ -584,6 +888,15 @@ func pollAuthCmd(cfg config.Config, httpClient *client.Client, code string) tea.
 		defer cancel()
 		status, err := auth.CheckPair(ctx, httpClient, cfg.DjangoURL, code)
 		return authStatusMsg{status: status, err: err}
+	}
+}
+
+func fetchTUIConfigCmd(cfg config.Config, httpClient *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+		defer cancel()
+		configSnapshot, err := auth.FetchConfig(ctx, httpClient, cfg.DjangoURL)
+		return tuiConfigMsg{cfg: configSnapshot, err: err}
 	}
 }
 

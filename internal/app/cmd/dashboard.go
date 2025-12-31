@@ -11,7 +11,7 @@ var dashboardCmd = &cobra.Command{
 	Use:   "dashboard",
 	Short: "Run the dashboard UI",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(cmd)
+		cfg, err := config.LoadAllowEmpty(cmd)
 		if err != nil {
 			return err
 		}

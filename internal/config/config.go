@@ -60,6 +60,15 @@ type fileConfig struct {
 	LogFile            string            `yaml:"log_file" toml:"log_file"`
 }
 
+type minimalFileConfig struct {
+	WorkerURL        string `yaml:"worker_url,omitempty" toml:"worker_url,omitempty"`
+	WorkerMetricsURL string `yaml:"worker_metrics_url,omitempty" toml:"worker_metrics_url,omitempty"`
+	WorkerHealthURL  string `yaml:"worker_health_url,omitempty" toml:"worker_health_url,omitempty"`
+	EventsURL        string `yaml:"events_url,omitempty" toml:"events_url,omitempty"`
+	DjangoURL        string `yaml:"django_url,omitempty" toml:"django_url,omitempty"`
+	DjangoStatsURL   string `yaml:"django_stats_url,omitempty" toml:"django_stats_url,omitempty"`
+}
+
 type flagValues struct {
 	ConfigFile         string
 	WorkerURL          string
@@ -106,7 +115,7 @@ func DefaultConfig() Config {
 func RegisterFlags(cmd *cobra.Command) {
 	cmd.Flags().String("config", "", "Path to YAML/TOML config file")
 	cmd.Flags().String("worker-url", "", "Base worker URL (derives /metrics and /healthz)")
-	cmd.Flags().String("worker-metrics-url", "", "Worker Prometheus/OpenMetrics URL (required)")
+	cmd.Flags().String("worker-metrics-url", "", "Worker Prometheus/OpenMetrics URL")
 	cmd.Flags().String("worker-health-url", "", "Worker health URL (default derived from metrics host)")
 	cmd.Flags().String("events-url", "", "Events SSE URL")
 	cmd.Flags().String("django-url", "", "Base Django URL (derives /reproq/stats/ and auth endpoints)")
@@ -126,6 +135,14 @@ func RegisterFlags(cmd *cobra.Command) {
 }
 
 func Load(cmd *cobra.Command) (Config, error) {
+	return load(cmd, true)
+}
+
+func LoadAllowEmpty(cmd *cobra.Command) (Config, error) {
+	return load(cmd, false)
+}
+
+func load(cmd *cobra.Command, requireMetrics bool) (Config, error) {
 	flags, err := readFlags(cmd)
 	if err != nil {
 		return Config{}, err
@@ -165,7 +182,7 @@ func Load(cmd *cobra.Command) (Config, error) {
 	if cfg.WorkerHealthURL == "" {
 		cfg.WorkerHealthURL = deriveHealthURL(cfg.WorkerMetricsURL)
 	}
-	if cfg.WorkerMetricsURL == "" {
+	if requireMetrics && cfg.WorkerMetricsURL == "" {
 		return Config{}, errors.New("worker metrics URL is required (--worker-metrics-url or --worker-url)")
 	}
 	if err := validateURLs(cfg); err != nil {
@@ -180,6 +197,17 @@ func defaultConfigPath() (string, error) {
 		return "", fmt.Errorf("unable to resolve user config dir")
 	}
 	return filepath.Join(dir, "reproq-tui", "config.yaml"), nil
+}
+
+func DefaultConfigPath() (string, error) {
+	return defaultConfigPath()
+}
+
+func ResolveConfigPath() (string, error) {
+	if val := strings.TrimSpace(os.Getenv(envPrefix + "CONFIG")); val != "" {
+		return val, nil
+	}
+	return defaultConfigPath()
 }
 
 func readFlags(cmd *cobra.Command) (flagValues, error) {
@@ -518,6 +546,36 @@ func DeriveDjangoStatsURL(djangoURL string) string {
 
 func DeriveDjangoURL(statsURL string) string {
 	return deriveDjangoURL(statsURL)
+}
+
+func DeriveMetricsURL(workerURL string) string {
+	return deriveMetricsURL(workerURL)
+}
+
+func DeriveHealthURL(metricsURL string) string {
+	return deriveHealthURL(metricsURL)
+}
+
+func WriteMinimalConfig(path string, cfg Config) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("config path is required")
+	}
+	fileCfg := minimalFileConfig{
+		WorkerURL:        cfg.WorkerURL,
+		WorkerMetricsURL: cfg.WorkerMetricsURL,
+		WorkerHealthURL:  cfg.WorkerHealthURL,
+		EventsURL:        cfg.EventsURL,
+		DjangoURL:        cfg.DjangoURL,
+		DjangoStatsURL:   cfg.DjangoStatsURL,
+	}
+	payload, err := yaml.Marshal(fileCfg)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o600)
 }
 
 func validateURLs(cfg Config) error {

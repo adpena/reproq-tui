@@ -22,6 +22,9 @@ func (m *Model) View() string {
 	if m.authFlowActive {
 		return m.renderAuthPrompt()
 	}
+	if m.setupActive {
+		return m.renderSetup()
+	}
 	if m.detailActive {
 		return m.renderDetails()
 	}
@@ -36,6 +39,36 @@ func (m *Model) View() string {
 	}
 	main := m.renderMain(mainHeight)
 	return lipgloss.JoinVertical(lipgloss.Left, top, main, bottom)
+}
+
+func (m *Model) renderSetup() string {
+	width := maxInt(44, minInt(92, m.width-6))
+	title := m.theme.Styles.CardTitle.Render("Connect Reproq TUI")
+	lines := []string{title, ""}
+	if m.setupStage == setupDjango {
+		lines = append(lines,
+			m.theme.Styles.Badge.Render("Step 1 of 2"),
+			"Paste your Django 6.0 app URL (https optional):",
+			m.setupDjangoURL.View(),
+		)
+	} else {
+		lines = append(lines,
+			m.theme.Styles.Badge.Render("Step 2 of 2"),
+			"Worker URL or /metrics endpoint:",
+			m.setupWorkerURL.View(),
+		)
+	}
+	if m.setupNotice != "" {
+		lines = append(lines, "", m.theme.Styles.StatusWarn.Render(m.setupNotice))
+	}
+	footer := "enter to continue | tab to switch | esc to quit"
+	if m.setupStage == setupDjango {
+		footer = "enter to continue | tab to skip | esc to quit"
+	}
+	lines = append(lines, "", m.theme.Styles.Muted.Render(footer))
+	content := strings.Join(lines, "\n")
+	card := m.theme.Styles.Card.Width(width).Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, card)
 }
 
 func (m *Model) renderHelp() string {
@@ -309,6 +342,9 @@ func (m *Model) renderMain(height int) string {
 }
 
 func (m *Model) renderLeftPane(width, height int) string {
+	loading := m.lastScrapeAt.IsZero()
+	spinnerView := m.spinner.View()
+
 	queueDepth := m.queueDepthValue()
 	running := m.runningCountValue()
 	workerCount := m.workerCountValue()
@@ -320,20 +356,28 @@ func (m *Model) renderLeftPane(width, height int) string {
 	if count, ok := m.statsPeriodicCount(); ok {
 		periodicCount = formatCount(count)
 	}
+
+	val := func(v string) string {
+		if loading {
+			return spinnerView
+		}
+		return v
+	}
+
 	lines := []string{
-		m.labelValue("Queue depth", formatNumber(queueDepth)),
-		m.labelValue("Running", formatNumber(running)),
-		m.labelValue("Throughput", formatRate(m.currentThroughput())),
-		m.labelValue("Errors", formatRate(m.latestValue(seriesErrors))),
-		m.labelValue("Success", formatPercent(m.currentSuccessRatio())),
-		m.labelValue("Workers", formatNumber(workerCount)),
-		m.labelValue("Queues", queueCount),
-		m.labelValue("Periodic", periodicCount),
-		m.labelValue("Concurrency", fmt.Sprintf("%s/%s",
+		m.labelValue("Queue depth", val(formatNumber(queueDepth))),
+		m.labelValue("Running", val(formatNumber(running))),
+		m.labelValue("Throughput", val(formatRate(m.currentThroughput()))),
+		m.labelValue("Errors", val(formatRate(m.latestValue(seriesErrors)))),
+		m.labelValue("Success", val(formatPercent(m.currentSuccessRatio()))),
+		m.labelValue("Workers", val(formatNumber(workerCount))),
+		m.labelValue("Queues", val(queueCount)),
+		m.labelValue("Periodic", val(periodicCount)),
+		m.labelValue("Concurrency", val(fmt.Sprintf("%s/%s",
 			formatNumber(m.latestValue(metrics.MetricConcurrencyInUse)),
 			formatNumber(m.latestValue(metrics.MetricConcurrencyLimit)),
-		)),
-		m.labelValue("P95 latency", formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second)))),
+		))),
+		m.labelValue("P95 latency", val(formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second))))),
 	}
 	body := strings.Join(lines, "\n")
 	card := m.card("Now", body, width, height, m.focus == focusLeft)
@@ -344,19 +388,35 @@ func (m *Model) renderCenterPane(width, height int) string {
 	gap := 1
 	cardHeight := maxInt(6, (height-gap)/2)
 	chartWidth := maxInt(10, width-6)
+	loading := m.lastScrapeAt.IsZero()
+	spinnerView := m.spinner.View()
 
 	throughput := m.seriesValues(seriesThroughput)
 	queueDepth := m.seriesValues(metrics.MetricQueueDepth)
 	errors := m.seriesValues(seriesErrors)
 	latency := m.seriesValues(metrics.MetricLatencyP95)
 
-	first := m.chartCard("Throughput", formatRate(m.currentThroughput()), charts.Sparkline(throughput, chartWidth), width, cardHeight, m.focus == focusCenter)
-	second := m.chartCard("Queue depth", formatNumber(m.latestValue(metrics.MetricQueueDepth)), charts.Sparkline(queueDepth, chartWidth), width, cardHeight, false)
+	val := func(v string) string {
+		if loading {
+			return spinnerView
+		}
+		return v
+	}
+
+	chart := func(c string) string {
+		if loading {
+			return "\n\n  " + m.theme.Styles.Muted.Render("Waiting for metrics...")
+		}
+		return c
+	}
+
+	first := m.chartCard("Throughput", val(formatRate(m.currentThroughput())), chart(charts.Sparkline(throughput, chartWidth)), width, cardHeight, m.focus == focusCenter)
+	second := m.chartCard("Queue depth", val(formatNumber(m.latestValue(metrics.MetricQueueDepth))), chart(charts.Sparkline(queueDepth, chartWidth)), width, cardHeight, false)
 
 	remaining := height - (cardHeight*2 + gap)
 	if remaining >= cardHeight {
-		third := m.chartCard("Errors", formatRate(m.latestValue(seriesErrors)), charts.Sparkline(errors, chartWidth), width, cardHeight, false)
-		fourth := m.chartCard("P95 latency", formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second))), charts.Sparkline(latency, chartWidth), width, cardHeight, false)
+		third := m.chartCard("Errors", val(formatRate(m.latestValue(seriesErrors))), chart(charts.Sparkline(errors, chartWidth)), width, cardHeight, false)
+		fourth := m.chartCard("P95 latency", val(formatDuration(time.Duration(m.currentLatencyP95()*float64(time.Second)))), chart(charts.Sparkline(latency, chartWidth)), width, cardHeight, false)
 		return lipgloss.JoinVertical(lipgloss.Left, first, strings.Repeat("\n", gap), second, strings.Repeat("\n", gap), third, strings.Repeat("\n", gap), fourth)
 	}
 

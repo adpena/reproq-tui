@@ -13,8 +13,10 @@ import (
 	"github.com/adpena/reproq-tui/pkg/client"
 	"github.com/adpena/reproq-tui/pkg/models"
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -28,6 +30,14 @@ const (
 	focusLeft focusPane = iota
 	focusCenter
 	focusRight
+)
+
+type setupStage int
+
+const (
+	setupNone setupStage = iota
+	setupDjango
+	setupWorker
 )
 
 type Model struct {
@@ -51,6 +61,14 @@ type Model struct {
 	filterActive bool
 	filter       string
 	filterLocal  string
+
+	setupActive    bool
+	setupStage     setupStage
+	setupWorkerURL textinput.Model
+	setupDjangoURL textinput.Model
+	setupNotice    string
+	setupPersist   bool
+	setupPersisted bool
 
 	windowOptions []time.Duration
 	windowIndex   int
@@ -99,6 +117,8 @@ type Model struct {
 
 	toast       string
 	toastExpiry time.Time
+
+	spinner spinner.Model
 }
 
 func NewModel(cfg config.Config) *Model {
@@ -143,6 +163,16 @@ func NewModel(cfg config.Config) *Model {
 	filter.CharLimit = 64
 	filter.Width = 36
 
+	setupWorkerInput := textinput.New()
+	setupWorkerInput.Placeholder = "http://localhost:9100 or /metrics"
+	setupWorkerInput.CharLimit = 200
+	setupWorkerInput.Width = 52
+
+	setupDjangoInput := textinput.New()
+	setupDjangoInput.Placeholder = "https://django.example.com"
+	setupDjangoInput.CharLimit = 200
+	setupDjangoInput.Width = 52
+
 	authURL := textinput.New()
 	authURL.Placeholder = "django.example.com"
 	authURL.CharLimit = 200
@@ -172,8 +202,28 @@ func NewModel(cfg config.Config) *Model {
 		}
 	}
 	authEnabled := strings.TrimSpace(cfg.DjangoURL) != ""
+	if cfg.WorkerURL != "" {
+		setupWorkerInput.SetValue(cfg.WorkerURL)
+	}
+	if cfg.DjangoURL != "" {
+		setupDjangoInput.SetValue(cfg.DjangoURL)
+	}
+	stage := setupNone
+	if strings.TrimSpace(cfg.WorkerMetricsURL) == "" && strings.TrimSpace(cfg.WorkerURL) == "" {
+		if strings.TrimSpace(cfg.DjangoURL) == "" {
+			stage = setupDjango
+		} else {
+			stage = setupWorker
+		}
+	}
+	setupActive := stage != setupNone
+	if stage == setupDjango {
+		setupDjangoInput.Focus()
+	} else if stage == setupWorker {
+		setupWorkerInput.Focus()
+	}
 
-	return &Model{
+	model := &Model{
 		cfg:               cfg,
 		client:            httpClient,
 		catalog:           catalog,
@@ -181,6 +231,11 @@ func NewModel(cfg config.Config) *Model {
 		keymap:            newKeyMap(),
 		help:              help.New(),
 		filterInput:       filter,
+		setupActive:       setupActive,
+		setupStage:        stage,
+		setupWorkerURL:    setupWorkerInput,
+		setupDjangoURL:    setupDjangoInput,
+		setupPersist:      setupActive,
 		windowOptions:     windowOptions,
 		windowIndex:       windowIndex,
 		showEvents:        true,
@@ -200,24 +255,37 @@ func NewModel(cfg config.Config) *Model {
 		eventsURL:         cfg.EventsURL,
 		ctx:               ctx,
 		cancel:            cancel,
+		spinner:           spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(theme.Resolve(cfg.Theme).Palette.Accent))),
 	}
+	model.applyInputStyles()
+	return model
 }
 
 func (m *Model) Init() tea.Cmd {
+	if m.setupActive {
+		if m.setupStage == setupWorker && strings.TrimSpace(m.cfg.DjangoURL) != "" {
+			return fetchTUIConfigCmd(m.cfg, m.client)
+		}
+		return nil
+	}
 	if m.eventsEnabled {
 		m.startEvents()
 	}
-	cmds := []tea.Cmd{
-		pollMetricsCmd(m.cfg, m.client, m.catalog),
-		pollHealthCmd(m.cfg, m.client),
+	return tea.Batch(m.spinner.Tick, m.startPollingCmds())
+}
+
+func (m *Model) applyInputStyles() {
+	set := func(input *textinput.Model) {
+		input.Prompt = ""
+		input.PromptStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Muted)
+		input.TextStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Text)
+		input.PlaceholderStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Muted)
+		input.CursorStyle = lipgloss.NewStyle().Foreground(m.theme.Palette.Accent)
 	}
-	if m.statsEnabled {
-		cmds = append(cmds, pollStatsCmd(m.cfg, m.client))
-	}
-	if m.eventsEnabled {
-		cmds = append(cmds, listenEventsCmd(m.eventsCh))
-	}
-	return tea.Batch(cmds...)
+	set(&m.filterInput)
+	set(&m.setupWorkerURL)
+	set(&m.setupDjangoURL)
+	set(&m.authURLInput)
 }
 
 func (m *Model) Close() {
@@ -234,6 +302,26 @@ func (m *Model) startEvents() {
 		return
 	}
 	m.restartEvents(m.eventsBaseURL, true)
+}
+
+func (m *Model) startPollingCmds() tea.Cmd {
+	cmds := []tea.Cmd{}
+	if m.cfg.WorkerMetricsURL != "" {
+		cmds = append(cmds, pollMetricsCmd(m.cfg, m.client, m.catalog))
+	}
+	if m.cfg.WorkerHealthURL != "" {
+		cmds = append(cmds, pollHealthCmd(m.cfg, m.client))
+	}
+	if m.statsEnabled {
+		cmds = append(cmds, pollStatsCmd(m.cfg, m.client))
+	}
+	if m.eventsEnabled {
+		cmds = append(cmds, listenEventsCmd(m.eventsCh))
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) restartEvents(url string, clear bool) {

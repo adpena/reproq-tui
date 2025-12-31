@@ -34,3 +34,34 @@ func TestNormalizeDjangoURLInputInvalid(t *testing.T) {
 		t.Fatal("expected error for invalid scheme")
 	}
 }
+
+func TestNormalizeBaseURLInput(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "example.com", want: "https://example.com"},
+		{in: "localhost:9100", want: "http://localhost:9100"},
+		{in: "https://example.com/api", want: "https://example.com/api"},
+		{in: "https:\\example.com\\api\\", want: "https://example.com/api/"},
+	}
+
+	for _, c := range cases {
+		got, err := normalizeBaseURLInput(c.in)
+		if err != nil {
+			t.Fatalf("normalize %q failed: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("normalize %q => %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeBaseURLInputInvalid(t *testing.T) {
+	if _, err := normalizeBaseURLInput(" "); err == nil {
+		t.Fatal("expected error for empty input")
+	}
+	if _, err := normalizeBaseURLInput("ftp://example.com"); err == nil {
+		t.Fatal("expected error for invalid scheme")
+	}
+}

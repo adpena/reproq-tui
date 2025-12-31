@@ -13,9 +13,13 @@ import (
 )
 
 type Pairing struct {
-	Code      string
-	VerifyURL string
-	ExpiresAt time.Time
+	Code             string
+	VerifyURL        string
+	ExpiresAt        time.Time
+	WorkerURL        string
+	WorkerMetricsURL string
+	WorkerHealthURL  string
+	EventsURL        string
 }
 
 type PairStatus struct {
@@ -38,17 +42,25 @@ func StartPair(ctx context.Context, httpClient *client.Client, baseURL string) (
 		return Pairing{}, client.StatusError{URL: pairURL, Code: resp.StatusCode}
 	}
 	var payload struct {
-		Code      string `json:"code"`
-		VerifyURL string `json:"verify_url"`
-		ExpiresAt int64  `json:"expires_at"`
+		Code             string `json:"code"`
+		VerifyURL        string `json:"verify_url"`
+		ExpiresAt        int64  `json:"expires_at"`
+		WorkerURL        string `json:"worker_url"`
+		WorkerMetricsURL string `json:"worker_metrics_url"`
+		WorkerHealthURL  string `json:"worker_health_url"`
+		EventsURL        string `json:"events_url"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return Pairing{}, err
 	}
 	return Pairing{
-		Code:      payload.Code,
-		VerifyURL: payload.VerifyURL,
-		ExpiresAt: time.Unix(payload.ExpiresAt, 0),
+		Code:             payload.Code,
+		VerifyURL:        payload.VerifyURL,
+		ExpiresAt:        time.Unix(payload.ExpiresAt, 0),
+		WorkerURL:        strings.TrimSpace(payload.WorkerURL),
+		WorkerMetricsURL: strings.TrimSpace(payload.WorkerMetricsURL),
+		WorkerHealthURL:  strings.TrimSpace(payload.WorkerHealthURL),
+		EventsURL:        strings.TrimSpace(payload.EventsURL),
 	}, nil
 }
 

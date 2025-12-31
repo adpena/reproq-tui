@@ -118,6 +118,59 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadAllowEmpty(t *testing.T) {
+	setTestConfigHome(t)
+	cmd := &cobra.Command{Use: "test"}
+	RegisterFlags(cmd)
+
+	cfg, err := LoadAllowEmpty(cmd)
+	if err != nil {
+		t.Fatalf("load allow empty: %v", err)
+	}
+	if cfg.WorkerMetricsURL != "" {
+		t.Fatalf("expected empty metrics url, got %s", cfg.WorkerMetricsURL)
+	}
+}
+
+func TestResolveConfigPathEnv(t *testing.T) {
+	setTestConfigHome(t)
+	t.Setenv(envPrefix+"CONFIG", "/tmp/reproq-tui-config.yaml")
+	path, err := ResolveConfigPath()
+	if err != nil {
+		t.Fatalf("resolve config path: %v", err)
+	}
+	if path != "/tmp/reproq-tui-config.yaml" {
+		t.Fatalf("expected env path, got %s", path)
+	}
+}
+
+func TestWriteMinimalConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cfg := Config{
+		WorkerURL:        "http://worker.local",
+		WorkerMetricsURL: "http://worker.local/metrics",
+		DjangoURL:        "http://django.local",
+	}
+	if err := WriteMinimalConfig(path, cfg); err != nil {
+		t.Fatalf("write minimal config: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "worker_url:") {
+		t.Fatalf("expected worker_url in config, got %s", content)
+	}
+	if !strings.Contains(content, "worker_metrics_url:") {
+		t.Fatalf("expected worker_metrics_url in config, got %s", content)
+	}
+	if !strings.Contains(content, "django_url:") {
+		t.Fatalf("expected django_url in config, got %s", content)
+	}
+}
+
 func TestLoadWorkerURLDerivesEndpoints(t *testing.T) {
 	setTestConfigHome(t)
 	cmd := &cobra.Command{Use: "test"}
