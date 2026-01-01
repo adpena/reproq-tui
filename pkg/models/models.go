@@ -40,8 +40,18 @@ type DjangoStats struct {
 	Queues     map[string]map[string]int64 `json:"queues"`
 	Workers    []WorkerInfo                `json:"workers"`
 	Periodic   []PeriodicTask              `json:"periodic"`
+	Scheduler  *SchedulerStatus            `json:"scheduler,omitempty"`
 	TopFailing []FailingTask               `json:"top_failing"`
 	FetchedAt  time.Time                   `json:"fetched_at,omitempty"`
+}
+
+type SchedulerStatus struct {
+	Mode            string `json:"mode"`
+	LowMemory       bool   `json:"low_memory"`
+	BeatEnabled     bool   `json:"beat_enabled"`
+	BeatConfigured  bool   `json:"beat_configured"`
+	PgCronAvailable bool   `json:"pg_cron_available"`
+	Warning         string `json:"warning,omitempty"`
 }
 
 type FailingTask struct {

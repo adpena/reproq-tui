@@ -93,6 +93,13 @@ func (m *Model) statsSnapshot() *models.DjangoStats {
 	return &copy
 }
 
+func (m *Model) statsScheduler() (*models.SchedulerStatus, bool) {
+	if !m.statsAvailable() || m.lastStats.Scheduler == nil {
+		return nil, false
+	}
+	return m.lastStats.Scheduler, true
+}
+
 func (m *Model) statsTaskCount(status string) (int64, bool) {
 	if !m.statsAvailable() || m.lastStats.Tasks == nil {
 		return 0, false

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/adpena/reproq-tui/pkg/models"
 )
 
 func formatNumber(value float64) string {
@@ -80,6 +82,24 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	}
 	return d.Truncate(time.Second).String()
+}
+
+func formatYesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
+func formatScheduler(status *models.SchedulerStatus) string {
+	if status == nil || status.Mode == "" {
+		return "-"
+	}
+	label := status.Mode
+	if status.LowMemory {
+		label += " (low)"
+	}
+	return label
 }
 
 func formatTimestamp(t time.Time) string {

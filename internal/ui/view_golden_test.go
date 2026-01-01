@@ -88,6 +88,13 @@ func TestDashboardViewGolden(t *testing.T) {
 				NextRunAt: base.Add(2 * time.Hour),
 			},
 		},
+		Scheduler: &models.SchedulerStatus{
+			Mode:            "pg_cron",
+			LowMemory:       true,
+			BeatEnabled:     false,
+			BeatConfigured:  false,
+			PgCronAvailable: true,
+		},
 		FetchedAt: base,
 	}
 

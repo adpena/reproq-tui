@@ -278,8 +278,18 @@ func (m *Model) detailBody(view string) string {
 		ref := m.referenceTime()
 		lines := []string{
 			m.labelValue("Total tasks", formatCount(int64(len(periodic)))),
-			"",
 		}
+		if sched, ok := m.statsScheduler(); ok {
+			lines = append(lines,
+				m.labelValue("Scheduler", formatScheduler(sched)),
+				m.labelValue("Beat", formatYesNo(sched.BeatEnabled)),
+				m.labelValue("pg_cron", formatYesNo(sched.PgCronAvailable)),
+			)
+			if sched.Warning != "" {
+				lines = append(lines, "", m.theme.Styles.StatusWarn.Render(sched.Warning))
+			}
+		}
+		lines = append(lines, "")
 		for i, task := range periodic {
 			if i >= 10 { // Show more tasks in detail view
 				break
@@ -437,6 +447,10 @@ func (m *Model) renderLeftPane(width, height int) string {
 	if next, ok := m.statsNextPeriodic(); ok {
 		nextPeriodic = formatScheduleAt(next.NextRunAt, ref)
 	}
+	schedulerLabel := "-"
+	if sched, ok := m.statsScheduler(); ok {
+		schedulerLabel = formatScheduler(sched)
+	}
 	activeWorkers := "-"
 	staleWorkers := "-"
 	if active, stale, ok := m.statsWorkerStatusCounts(); ok {
@@ -494,6 +508,7 @@ func (m *Model) renderLeftPane(width, height int) string {
 		"",
 		m.theme.Styles.PaneHeader.Render("PERIODIC"),
 		m.labelValue("Count", val(periodicCount)),
+		m.labelValue("Scheduler", val(schedulerLabel)),
 		m.labelValue("Queues", val(queueCount)),
 		m.labelValue("Next up", val(nextPeriodic)),
 	)

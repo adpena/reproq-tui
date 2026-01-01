@@ -23,10 +23,10 @@
 |                                  |                                                        |
 |   PERIODIC                       |                                                        |
 |  Count          1                |                                                        |
+|  Scheduler      pg_cron          |                                                        |
+|  (low)                           |                                                        |
 |  Queues         1                |                                                        |
 |  Next up        in 2h            |                                                        |
-|                                  |                                                        |
-|                                  |                                                        |
 |                                  |                                                        |
                                                                                             |
  ? help * p pause * r refresh * 1 1m window * 2 5m window * 3 15m window * / filter * d details * e toggle events * l
