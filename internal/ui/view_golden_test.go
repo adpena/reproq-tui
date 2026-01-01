@@ -123,6 +123,9 @@ func TestDashboardViewGolden(t *testing.T) {
 		Timestamp: time.Date(2024, 1, 1, 9, 30, 0, 0, time.UTC),
 		Level:     "error",
 		Message:   "task failed",
+		Metadata: map[string]string{
+			"role": "worker",
+		},
 	})
 	model.eventsBuffer.Add(models.Event{
 		Timestamp: time.Date(2024, 1, 1, 9, 31, 0, 0, time.UTC),

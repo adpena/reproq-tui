@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -414,7 +415,12 @@ func (m *Model) renderErrorList() string {
 		if level != "error" && level != "warn" && level != "warning" {
 			continue
 		}
-		line := fmt.Sprintf("%s %s", formatTimestamp(event.Timestamp), event.Message)
+		timestamp := formatTimestamp(event.Timestamp)
+		meta := formatEventMeta(event.Metadata)
+		line := fmt.Sprintf("%s %s", timestamp, event.Message)
+		if meta != "" {
+			line = fmt.Sprintf("%s [%s] %s", timestamp, meta, event.Message)
+		}
 		lines = append(lines, line)
 	}
 	if len(lines) == 0 {
@@ -625,12 +631,16 @@ func (m *Model) renderCenterPane(width, height int) string {
 func (m *Model) renderRightPane(width, height int) string {
 	status := m.eventsStatus()
 	header := m.theme.Styles.PaneHeader.Width(width).Render(joinRight("Events", status, width))
-	lines := m.renderEvents(width, height-1)
-	body := strings.Join(lines, "\n")
 	cardStyle := m.theme.Styles.Card
 	if m.focus == focusRight {
 		cardStyle = cardStyle.BorderForeground(m.theme.Palette.AccentAlt)
 	}
+	contentWidth := width - cardStyle.GetHorizontalFrameSize()
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
+	lines := m.renderEvents(contentWidth, height-1)
+	body := strings.Join(lines, "\n")
 	card := cardStyle.Width(width).Height(height - 1).Render(body)
 	return lipgloss.JoinVertical(lipgloss.Left, header, card)
 }
@@ -741,17 +751,24 @@ func (m *Model) renderEvents(width, height int) []string {
 		if !m.matchFilter(event) {
 			continue
 		}
-		line := fmt.Sprintf("%s %s", formatTimestamp(event.Timestamp), event.Message)
+		timestamp := formatTimestamp(event.Timestamp)
+		meta := formatEventMeta(event.Metadata)
+		rawLine := fmt.Sprintf("%s %s", timestamp, event.Message)
+		if meta != "" {
+			rawLine = fmt.Sprintf("%s [%s] %s", timestamp, meta, event.Message)
+		}
+		rawLine = truncate(rawLine, width-2)
+		line := rawLine
 		level := strings.ToLower(event.Level)
 		switch level {
 		case "error":
-			line = m.theme.Styles.StatusDown.Render(line)
+			line = m.theme.Styles.StatusDown.Render(rawLine)
 		case "warn", "warning":
-			line = m.theme.Styles.StatusWarn.Render(line)
+			line = m.theme.Styles.StatusWarn.Render(rawLine)
 		default:
-			line = m.theme.Styles.Muted.Render(line)
+			line = m.theme.Styles.Muted.Render(rawLine)
 		}
-		filtered = append(filtered, truncate(line, width-2))
+		filtered = append(filtered, line)
 	}
 	if len(filtered) == 0 {
 		if m.lastScrapeAt.IsZero() {
@@ -806,11 +823,41 @@ func flattenMeta(meta map[string]string) string {
 	if len(meta) == 0 {
 		return ""
 	}
+	keys := make([]string, 0, len(meta))
+	for key := range meta {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 	parts := make([]string, 0, len(meta))
-	for key, val := range meta {
-		parts = append(parts, fmt.Sprintf("%s:%s", key, val))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s:%s", key, meta[key]))
 	}
 	return strings.Join(parts, " ")
+}
+
+func formatEventMeta(meta map[string]string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	role, ok := meta["role"]
+	if !ok || role == "" {
+		return flattenMeta(meta)
+	}
+	if len(meta) == 1 {
+		return fmt.Sprintf("role:%s", role)
+	}
+	rest := make(map[string]string, len(meta)-1)
+	for key, val := range meta {
+		if key == "role" {
+			continue
+		}
+		rest[key] = val
+	}
+	tail := flattenMeta(rest)
+	if tail == "" {
+		return fmt.Sprintf("role:%s", role)
+	}
+	return fmt.Sprintf("role:%s %s", role, tail)
 }
 
 func (m *Model) chartCard(title, value, chart string, width, height int, focused bool, updatedAt time.Time) string {
