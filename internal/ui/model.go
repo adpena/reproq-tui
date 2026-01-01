@@ -249,7 +249,7 @@ func NewModel(cfg config.Config) *Model {
 		windowOptions:     windowOptions,
 		windowIndex:       windowIndex,
 		showEvents:        true,
-		detailViews:       []string{"Queues", "Workers", "Periodic", "Tasks", "Errors"},
+		detailViews:       []string{"Queues", "Workers", "Periodic", "Databases", "Tasks", "Errors"},
 		series:            series,
 		lastCounters:      map[string]models.Sample{},
 		statsEnabled:      cfg.DjangoStatsURL != "",

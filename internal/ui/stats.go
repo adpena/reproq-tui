@@ -90,6 +90,15 @@ func (m *Model) statsSnapshot() *models.DjangoStats {
 	if copy.Tasks == nil {
 		copy.Tasks = map[string]int64{}
 	}
+	if copy.Queues == nil {
+		copy.Queues = map[string]map[string]int64{}
+	}
+	if copy.QueueControls == nil {
+		copy.QueueControls = []models.QueueControl{}
+	}
+	if copy.Databases == nil {
+		copy.Databases = []models.DatabaseStats{}
+	}
 	return &copy
 }
 
@@ -224,6 +233,15 @@ func (m *Model) statsWorkerStatusCounts() (int, int, bool) {
 	return active, stale, true
 }
 
+func (m *Model) statsWorkerHealthCounts() (int64, int64, bool) {
+	if !m.statsAvailable() || m.lastStats.WorkerHealth == nil {
+		return 0, 0, false
+	}
+	alive := int64(m.lastStats.WorkerHealth.Alive)
+	dead := int64(m.lastStats.WorkerHealth.Dead)
+	return alive, dead, true
+}
+
 func (m *Model) splitWorkersByStatus(workers []models.WorkerInfo, now time.Time) ([]models.WorkerInfo, []models.WorkerInfo) {
 	cutoff := m.workerActiveCutoff(now)
 	active := make([]models.WorkerInfo, 0, len(workers))
@@ -259,6 +277,70 @@ func (m *Model) statsPeriodicByNextRun() []models.PeriodicTask {
 		return periodic[i].NextRunAt.Before(periodic[j].NextRunAt)
 	})
 	return periodic
+}
+
+func (m *Model) statsPausedQueues() []models.QueueControl {
+	if !m.statsAvailable() || len(m.lastStats.QueueControls) == 0 {
+		return nil
+	}
+	paused := make([]models.QueueControl, 0, len(m.lastStats.QueueControls))
+	for _, control := range m.lastStats.QueueControls {
+		if control.Paused {
+			paused = append(paused, control)
+		}
+	}
+	sort.Slice(paused, func(i, j int) bool {
+		if paused[i].QueueName == paused[j].QueueName {
+			return paused[i].Database < paused[j].Database
+		}
+		return paused[i].QueueName < paused[j].QueueName
+	})
+	return paused
+}
+
+type databaseSummary struct {
+	Alias    string
+	Total    int64
+	Ready    int64
+	Waiting  int64
+	Running  int64
+	Failed   int64
+	Workers  int
+	Queues   int
+	Periodic int
+}
+
+func (m *Model) statsDatabaseSummaries() []databaseSummary {
+	if !m.statsAvailable() || len(m.lastStats.Databases) == 0 {
+		return nil
+	}
+	out := make([]databaseSummary, 0, len(m.lastStats.Databases))
+	for _, db := range m.lastStats.Databases {
+		summary := databaseSummary{
+			Alias:    db.Alias,
+			Workers:  len(db.Workers),
+			Queues:   len(db.Queues),
+			Periodic: len(db.Periodic),
+		}
+		for status, count := range db.Tasks {
+			switch strings.ToUpper(status) {
+			case "READY":
+				summary.Ready += count
+			case "WAITING", "WAITING_CALLBACK":
+				summary.Waiting += count
+			case "RUNNING":
+				summary.Running += count
+			case "FAILED":
+				summary.Failed += count
+			}
+			summary.Total += count
+		}
+		out = append(out, summary)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Alias < out[j].Alias
+	})
+	return out
 }
 
 type queueSummary struct {

@@ -9,25 +9,26 @@
 |  Ready          8                |                                                        |  09:31:00 retry scheduled
 |  Running        2                |                                                        |
 |  Failed         1                |                                                        |
+|  Paused         1                |                                                        |
 |                                  |                                                        |
 |   WORKERS                        |                                                        |
 |  Total          3.00             |                                                        |
-|  Active         1                |                                                        |
-|  Stale          0                |                                                        |
+|  Alive          1                |                                                        |
+|  Dead           0                                                                         |
 |  Concurrency    3.00/10.0                                                                 |
-|                                                                                           |
-|   SYSTEM                         |                                                        |
-|  Worker Mem     -                |  Queue depth  7.00                 upd 09:20:10        |
-|  DB Pool        NaN              |  No data yet                                           |
+|                                  |                                                        |
+|   SYSTEM                         |  Queue depth  7.00                 upd 09:20:10        |
+|  Worker Mem     -                |  No data yet                                           |
+|  DB Pool        NaN              |                                                        |
 |  DB Wait        -                |                                                        |
+|  DBs            1                |                                                        |
 |                                  |                                                        |
 |   PERIODIC                       |                                                        |
 |  Count          1                |                                                        |
 |  Scheduler      pg_cron          |                                                        |
 |  (low)                           |                                                        |
 |  Queues         1                |                                                        |
-|  Next up        in 2h            |                                                        |
-|                                  |                                                        |
-                                                                                            |
+|  Next up        in 2h                                                                     |
+|
  ? help * p pause * r refresh * 1 1m window * 2 5m window * 3 15m window * / filter * d details * e toggle events * l
  login/logout * q quit Window 5m0s  Filter -  Auth -

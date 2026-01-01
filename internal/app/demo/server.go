@@ -216,6 +216,36 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 		"queues":   queues,
 		"workers":  workers,
 		"periodic": periodic,
+		"queue_controls": []map[string]interface{}{
+			{
+				"queue_name": "slow",
+				"paused":     true,
+				"paused_at":  time.Now().Add(-10 * time.Minute),
+				"reason":     "demo pause",
+				"updated_at": time.Now().Add(-2 * time.Minute),
+				"database":   "default",
+			},
+		},
+		"worker_health": map[string]int{
+			"alive": len(workers),
+			"dead":  0,
+		},
+		"databases": []map[string]interface{}{
+			{
+				"alias":    "default",
+				"tasks":    map[string]int64{"READY": ready, "RUNNING": running, "FAILED": failed},
+				"queues":   queues,
+				"workers":  workers,
+				"periodic": periodic,
+			},
+		},
+		"scheduler": map[string]interface{}{
+			"mode":              "beat",
+			"low_memory":        false,
+			"beat_enabled":      true,
+			"beat_configured":   true,
+			"pg_cron_available": false,
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")

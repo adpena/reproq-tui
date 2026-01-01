@@ -70,6 +70,18 @@ func TestDashboardViewGolden(t *testing.T) {
 				"RUNNING": 2,
 			},
 		},
+		QueueControls: []models.QueueControl{
+			{
+				QueueName: "default",
+				Paused:    true,
+				Reason:    "maintenance",
+				Database:  "default",
+			},
+		},
+		WorkerHealth: &models.WorkerHealth{
+			Alive: 1,
+			Dead:  0,
+		},
 		Workers: []models.WorkerInfo{
 			{
 				WorkerID:    "w-1",
@@ -86,6 +98,15 @@ func TestDashboardViewGolden(t *testing.T) {
 				CronExpr:  "0 0 * * *",
 				Enabled:   true,
 				NextRunAt: base.Add(2 * time.Hour),
+			},
+		},
+		Databases: []models.DatabaseStats{
+			{
+				Alias: "default",
+				Tasks: map[string]int64{"READY": 5, "RUNNING": 2, "FAILED": 1},
+				Queues: map[string]map[string]int64{
+					"default": {"READY": 5},
+				},
 			},
 		},
 		Scheduler: &models.SchedulerStatus{

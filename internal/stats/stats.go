@@ -35,5 +35,11 @@ func Fetch(ctx context.Context, httpClient *client.Client, url string) (models.D
 	if stats.Queues == nil {
 		stats.Queues = map[string]map[string]int64{}
 	}
+	if stats.QueueControls == nil {
+		stats.QueueControls = []models.QueueControl{}
+	}
+	if stats.Databases == nil {
+		stats.Databases = []models.DatabaseStats{}
+	}
 	return stats, nil
 }

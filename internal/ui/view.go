@@ -218,6 +218,25 @@ func (m *Model) detailBody(view string) string {
 				lines = append(lines, truncate(line, 60))
 			}
 		}
+		paused := m.statsPausedQueues()
+		if len(paused) > 0 {
+			lines = append(lines, "")
+			lines = append(lines, "Paused queues")
+			for i, control := range paused {
+				if i >= 5 {
+					break
+				}
+				label := control.QueueName
+				if control.Database != "" {
+					label = fmt.Sprintf("%s@%s", control.QueueName, control.Database)
+				}
+				line := label
+				if reason := strings.TrimSpace(control.Reason); reason != "" {
+					line = fmt.Sprintf("%s - %s", label, reason)
+				}
+				lines = append(lines, truncate(line, 60))
+			}
+		}
 		return strings.Join(lines, "\n")
 	case "Workers":
 		inUse := m.latestValue(metrics.MetricConcurrencyInUse)
@@ -304,6 +323,37 @@ func (m *Model) detailBody(view string) string {
 				line = m.theme.Styles.Muted.Render(line)
 			}
 			lines = append(lines, line)
+		}
+		return strings.Join(lines, "\n")
+	case "Databases":
+		summaries := m.statsDatabaseSummaries()
+		if len(summaries) == 0 {
+			if m.statsAvailable() {
+				return m.theme.Styles.Muted.Render("No per-database stats reported.")
+			}
+			return m.theme.Styles.Muted.Render("No Django stats configured.")
+		}
+		lines := []string{
+			m.labelValue("Databases", formatCount(int64(len(summaries)))),
+			"",
+		}
+		for i, summary := range summaries {
+			if i >= 6 {
+				break
+			}
+			line := fmt.Sprintf(
+				"%s %s (R%s W%s Ru%s F%s) w%d q%d p%d",
+				summary.Alias,
+				formatCount(summary.Total),
+				formatCount(summary.Ready),
+				formatCount(summary.Waiting),
+				formatCount(summary.Running),
+				formatCount(summary.Failed),
+				summary.Workers,
+				summary.Queues,
+				summary.Periodic,
+			)
+			lines = append(lines, truncate(line, 60))
 		}
 		return strings.Join(lines, "\n")
 	case "Tasks":
@@ -439,6 +489,10 @@ func (m *Model) renderLeftPane(width, height int) string {
 	if count, ok := m.statsQueueCount(); ok {
 		queueCount = formatCount(count)
 	}
+	dbCount := "-"
+	if summary := m.statsDatabaseSummaries(); len(summary) > 0 {
+		dbCount = formatCount(int64(len(summary)))
+	}
 	periodicCount := "-"
 	if count, ok := m.statsPeriodicCount(); ok {
 		periodicCount = formatCount(count)
@@ -456,6 +510,14 @@ func (m *Model) renderLeftPane(width, height int) string {
 	if active, stale, ok := m.statsWorkerStatusCounts(); ok {
 		activeWorkers = formatCount(int64(active))
 		staleWorkers = formatCount(int64(stale))
+	}
+	workerActiveLabel := "Active"
+	workerStaleLabel := "Stale"
+	if alive, dead, ok := m.statsWorkerHealthCounts(); ok {
+		workerActiveLabel = "Alive"
+		workerStaleLabel = "Dead"
+		activeWorkers = formatCount(alive)
+		staleWorkers = formatCount(dead)
 	}
 
 	val := func(v string) string {
@@ -491,11 +553,12 @@ func (m *Model) renderLeftPane(width, height int) string {
 		m.labelValue("Ready", val(formatCount(readyCount+waitingCount))),
 		m.labelValue("Running", val(formatCount(runningCount))),
 		m.labelValue("Failed", val(formatCount(failedCount))),
+		m.labelValue("Paused", val(formatCount(int64(len(m.statsPausedQueues()))))),
 		"",
 		m.theme.Styles.PaneHeader.Render("WORKERS"),
 		m.labelValue("Total", val(formatNumber(workerCount))),
-		m.labelValue("Active", val(activeWorkers)),
-		m.labelValue("Stale", val(staleWorkers)),
+		m.labelValue(workerActiveLabel, val(activeWorkers)),
+		m.labelValue(workerStaleLabel, val(staleWorkers)),
 		m.labelValue("Concurrency", val(fmt.Sprintf("%s/%s",
 			formatNumber(m.latestValue(metrics.MetricConcurrencyInUse)),
 			formatNumber(m.latestValue(metrics.MetricConcurrencyLimit)),
@@ -505,6 +568,7 @@ func (m *Model) renderLeftPane(width, height int) string {
 		m.labelValue("Worker Mem", val(formatBytes(m.latestValue(metrics.MetricWorkerMemUsage)))),
 		m.labelValue("DB Pool", val(fmt.Sprintf("%.0f", m.latestValue(metrics.MetricDBPoolConnections)))),
 		m.labelValue("DB Wait", val(dbWaitValue)),
+		m.labelValue("DBs", val(dbCount)),
 		"",
 		m.theme.Styles.PaneHeader.Render("PERIODIC"),
 		m.labelValue("Count", val(periodicCount)),

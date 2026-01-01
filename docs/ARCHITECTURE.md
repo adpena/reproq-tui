@@ -18,7 +18,7 @@ reproq-tui.
 - internal/health
   - Health endpoint polling and status parsing.
 - internal/stats
-  - Django stats API polling and JSON decoding.
+  - Django stats API polling and JSON decoding, including queue controls, worker health, and per-database rollups.
 - internal/auth
   - Pairing flow with reproq-django and persistent token storage.
 - internal/events
@@ -54,7 +54,7 @@ Pollers -> parsers -> snapshots -> ring buffers -> Bubble Tea model -> view
    - Rate, delta, and ratio computations derived from counters.
 
 5) Tea model (internal/ui/model.go)
-   - Updates ring buffers and caches Django stats for view.
+   - Updates ring buffers and caches Django stats for view (paused queues and database rollups feed detail panels).
 
 6) View rendering (internal/ui/view.go)
    - The UI composes status bar, cards, charts, and events pane.

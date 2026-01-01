@@ -56,6 +56,12 @@ Modern, realtime terminal dashboard for Reproq Worker (and optional Reproq Djang
     - `internal/events`: SSE client.
     - `internal/charts`: TUI chart renderers.
 
+## UI Layout Notes
+
+- **Queues detail**: paused queues appear under the standard queue summary to keep operational status adjacent to throughput; labels stay muted to avoid overpowering primary metrics.
+- **Databases detail**: per-database rollups live in a dedicated view to avoid cluttering the primary panels while still exposing multi-DB routing health.
+- **Color usage**: we keep the Obsidian accent palette for status emphasis (paused/critical items are highlighted sparingly) so the UI remains calm during normal operations.
+
 ## Documentation
 
 For more detailed information, refer to:

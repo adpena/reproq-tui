@@ -36,13 +36,16 @@ type Event struct {
 }
 
 type DjangoStats struct {
-	Tasks      map[string]int64            `json:"tasks"`
-	Queues     map[string]map[string]int64 `json:"queues"`
-	Workers    []WorkerInfo                `json:"workers"`
-	Periodic   []PeriodicTask              `json:"periodic"`
-	Scheduler  *SchedulerStatus            `json:"scheduler,omitempty"`
-	TopFailing []FailingTask               `json:"top_failing"`
-	FetchedAt  time.Time                   `json:"fetched_at,omitempty"`
+	Tasks         map[string]int64            `json:"tasks"`
+	Queues        map[string]map[string]int64 `json:"queues"`
+	Workers       []WorkerInfo                `json:"workers"`
+	Periodic      []PeriodicTask              `json:"periodic"`
+	QueueControls []QueueControl              `json:"queue_controls,omitempty"`
+	WorkerHealth  *WorkerHealth               `json:"worker_health,omitempty"`
+	Scheduler     *SchedulerStatus            `json:"scheduler,omitempty"`
+	TopFailing    []FailingTask               `json:"top_failing"`
+	Databases     []DatabaseStats             `json:"databases,omitempty"`
+	FetchedAt     time.Time                   `json:"fetched_at,omitempty"`
 }
 
 type SchedulerStatus struct {
@@ -73,4 +76,26 @@ type PeriodicTask struct {
 	CronExpr  string    `json:"cron_expr"`
 	Enabled   bool      `json:"enabled"`
 	NextRunAt time.Time `json:"next_run_at"`
+}
+
+type WorkerHealth struct {
+	Alive int `json:"alive"`
+	Dead  int `json:"dead"`
+}
+
+type QueueControl struct {
+	QueueName string    `json:"queue_name"`
+	Paused    bool      `json:"paused"`
+	PausedAt  time.Time `json:"paused_at"`
+	Reason    string    `json:"reason"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Database  string    `json:"database,omitempty"`
+}
+
+type DatabaseStats struct {
+	Alias    string                      `json:"alias"`
+	Tasks    map[string]int64            `json:"tasks"`
+	Queues   map[string]map[string]int64 `json:"queues"`
+	Workers  []WorkerInfo                `json:"workers"`
+	Periodic []PeriodicTask              `json:"periodic"`
 }

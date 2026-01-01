@@ -11,6 +11,7 @@ renders a responsive Bubble Tea + Lip Gloss UI.
 - Throughput, queue depth, errors, and latency charts.
 - Keyboard-driven UX with help overlay, filters, and snapshot export.
 - Optional SSE events stream with reconnect/backoff.
+- Django stats overlays for paused queues, worker health, and per-database rollups.
 - Cross-platform static binary release targets (macOS/Linux/Windows).
 
 ## Install

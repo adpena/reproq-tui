@@ -17,6 +17,15 @@ func TestFetchStats(t *testing.T) {
     "default": {"READY": 2, "RUNNING": 1},
     "fast": {"READY": 1, "FAILED": 1}
   },
+  "queue_controls": [{
+    "queue_name": "fast",
+    "paused": true,
+    "paused_at": "2024-01-01T12:00:00Z",
+    "reason": "maintenance",
+    "updated_at": "2024-01-01T12:01:00Z",
+    "database": "queues"
+  }],
+  "worker_health": {"alive": 1, "dead": 0},
   "workers": [{
     "worker_id": "w1",
     "hostname": "host",
@@ -30,6 +39,13 @@ func TestFetchStats(t *testing.T) {
     "cron_expr": "*/5 * * * *",
     "enabled": true,
     "next_run_at": "2024-01-01T12:05:00Z"
+  }],
+  "databases": [{
+    "alias": "default",
+    "tasks": {"READY": 3},
+    "queues": {"default": {"READY": 3}},
+    "workers": [],
+    "periodic": []
   }]
 }`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -70,6 +86,15 @@ func TestFetchStats(t *testing.T) {
 	}
 	if stats.Queues["default"]["READY"] != 2 {
 		t.Fatalf("expected default queue ready count")
+	}
+	if stats.WorkerHealth == nil || stats.WorkerHealth.Alive != 1 {
+		t.Fatalf("expected worker health parsed")
+	}
+	if len(stats.QueueControls) != 1 || stats.QueueControls[0].QueueName != "fast" {
+		t.Fatalf("expected queue controls parsed")
+	}
+	if len(stats.Databases) != 1 || stats.Databases[0].Alias != "default" {
+		t.Fatalf("expected databases parsed")
 	}
 }
 
