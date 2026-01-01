@@ -745,8 +745,19 @@ func (m *Model) renderEvents(width, height int) []string {
 	if !m.eventsEnabled {
 		return []string{m.theme.Styles.Muted.Render("No events stream configured")}
 	}
+	renderWidth := width - 2
+	if renderWidth < 0 {
+		renderWidth = 0
+	}
 	events := m.eventsBuffer.Items()
-	filtered := make([]string, 0, len(events))
+	filtered := make([]string, 0, len(events)+1)
+	eventLines := 0
+	if height >= 3 && renderWidth > 0 {
+		hint := truncate("Roles: worker, beat, web", renderWidth)
+		if hint != "" {
+			filtered = append(filtered, m.theme.Styles.Muted.Render(hint))
+		}
+	}
 	for _, event := range events {
 		if !m.matchFilter(event) {
 			continue
@@ -757,7 +768,7 @@ func (m *Model) renderEvents(width, height int) []string {
 		if meta != "" {
 			rawLine = fmt.Sprintf("%s [%s] %s", timestamp, meta, event.Message)
 		}
-		rawLine = truncate(rawLine, width-2)
+		rawLine = truncate(rawLine, renderWidth)
 		line := rawLine
 		level := strings.ToLower(event.Level)
 		switch level {
@@ -769,8 +780,9 @@ func (m *Model) renderEvents(width, height int) []string {
 			line = m.theme.Styles.Muted.Render(rawLine)
 		}
 		filtered = append(filtered, line)
+		eventLines++
 	}
-	if len(filtered) == 0 {
+	if eventLines == 0 {
 		if m.lastScrapeAt.IsZero() {
 			filtered = append(filtered, m.theme.Styles.Muted.Render("Waiting for events..."))
 		} else {
