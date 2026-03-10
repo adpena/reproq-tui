@@ -279,4 +279,4 @@ make build
 
 ## License
 
-See `LICENSE`.
+Apache License 2.0. See [LICENSE](LICENSE).
