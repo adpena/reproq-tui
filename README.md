@@ -1,247 +1,208 @@
-# reproq-tui
+# Reproq TUI
 
-Modern, realtime terminal dashboard for Reproq Worker (and optional Reproq Django).
-It polls the worker metrics and health endpoints, optionally consumes SSE events, and
-renders a responsive Bubble Tea + Lip Gloss UI.
+`reproq-tui` is a realtime terminal dashboard for the Reproq task stack. It gives operators and developers a fast, keyboard-driven view of queue depth, throughput, latency, failures, worker health, and optional Django-side rollups without opening a browser.
 
-## Features
+The project is designed for teams running [Reproq Worker](https://github.com/adpena/reproq-worker) directly or alongside [Reproq Django](https://github.com/adpena/reproq-django). It works well for local development, production debugging, incident response, and operator-facing demos.
 
-- Bubble Tea architecture with responsive, modern panels and theme fallbacks.
-- Realtime metrics polling with rolling windows (1m/5m/15m).
-- Throughput, queue depth, errors, and latency charts.
-- Keyboard-driven UX with help overlay, filters, and snapshot export.
-- Optional SSE events stream with reconnect/backoff.
-- Django stats overlays for paused queues, worker health, and per-database rollups.
-- Cross-platform static binary release targets (macOS/Linux/Windows).
+## Why It Exists
 
-## Install
+Reproq Worker exposes rich operational signals, but raw metrics endpoints are not the best day-to-day interface for humans. `reproq-tui` turns those signals into an interactive terminal experience that is:
 
-With Go:
+- Fast to launch
+- Friendly over SSH
+- Useful during incidents
+- Easy to hand to engineers or operators who do not want to live in Prometheus queries
 
-```
+## What It Visualizes
+
+`reproq-tui` can combine multiple sources of runtime information in one place:
+
+- Worker metrics from `/metrics`
+- Worker health from `/healthz`
+- Optional SSE events from `/events`
+- Optional Django rollups from `/reproq/stats/`
+- Saved local config and auth state for repeat runs
+
+The dashboard supports rolling windows, theme fallbacks, filters, overlays, and snapshot export.
+
+## Highlights
+
+- Realtime queue, throughput, latency, and error views
+- Bubble Tea + Lip Gloss interface with responsive panels
+- Optional Django-aware overlays for paused queues and worker rollups
+- Optional SSE stream support with reconnect and backoff
+- Interactive setup flow for first-time users
+- Local auth/token storage for repeat usage
+- Cross-platform release targets for macOS, Linux, and Windows
+
+## Installation
+
+### Go
+
+```bash
 go install github.com/adpena/reproq-tui/cmd/reproq-tui@latest
 ```
 
-Homebrew:
+### Homebrew
 
-```
+```bash
 brew tap adpena/tap
 brew install reproq-tui
 ```
 
-Curl (macOS/Linux):
+### Release Installer
 
-```
+```bash
 curl -fsSL https://github.com/adpena/reproq-tui/releases/latest/download/install.sh | bash
 ```
 
-From releases:
+### Manual Downloads
 
-```
-https://github.com/adpena/reproq-tui/releases
-```
+Prebuilt binaries are published on the releases page:
 
-## Quick start
+`https://github.com/adpena/reproq-tui/releases`
 
-Recommended (one-time setup + auto-login):
+## Quick Start
 
-1) Set `REPROQ_TUI_SECRET` on reproq-django (and reproq-worker if you want JWT auth for `/metrics`).
-2) If the worker metrics are not on the default local address, set `REPROQ_TUI_WORKER_INTERNAL_URL`
-   (or `REPROQ_TUI_WORKER_URL`) on reproq-django so it can share endpoints with the TUI.
-3) Run `reproq-tui` and paste the base Django URL. The TUI fetches `/reproq/tui/config/`, starts login,
-   and opens the dashboard (no worker prompt if Django provides endpoints).
-4) Re-run `reproq-tui` anytime; it auto-loads the saved config.
+### Fastest Path: Direct Worker Metrics
 
-Run the dashboard (base URL):
+If you already know the worker endpoint:
 
-```
+```bash
 reproq-tui dashboard --worker-url http://localhost:9100
 ```
 
-Or use the full metrics URL:
+Or point directly at the metrics endpoint:
 
-```
+```bash
 reproq-tui dashboard --worker-metrics-url http://localhost:9100/metrics
 ```
 
-If you run `reproq-tui` or `reproq-tui dashboard` without a worker URL, the TUI
-starts an interactive setup flow: it prompts for your Django URL (https optional;
-backslashes are normalized), fetches `/reproq/tui/config/`, kicks off login, then
-asks for the worker URL or `/metrics` only if Django does not supply endpoints.
-The config is saved to the default path automatically.
+If metrics are protected:
 
-Minimal env-based setup:
-
+```bash
+reproq-tui dashboard \
+  --worker-metrics-url http://localhost:9100/metrics \
+  --auth-token "$METRICS_AUTH_TOKEN"
 ```
-export REPROQ_TUI_WORKER_METRICS_URL=http://localhost:9100/metrics
+
+### Recommended Path: Django-Assisted Setup
+
+If you run `reproq-django`, the smoothest onboarding flow is:
+
+1. Set `REPROQ_TUI_SECRET` on `reproq-django`.
+2. Set the same `REPROQ_TUI_SECRET` on `reproq-worker` if you want the issued JWT to authorize `/metrics`, `/healthz`, and `/events`.
+3. Optionally set `REPROQ_TUI_WORKER_INTERNAL_URL` or `REPROQ_TUI_WORKER_URL` on `reproq-django` so it can hand the worker endpoints to the TUI automatically.
+4. Launch `reproq-tui` and paste the base Django URL when prompted.
+
+```bash
+reproq-tui
+```
+
+Or be explicit:
+
+```bash
+reproq-tui dashboard --django-url http://localhost:8000
+```
+
+When Django is configured, the TUI can bootstrap from `/reproq/tui/config/`, start the login flow, and avoid prompting for worker URLs unless it truly needs them.
+
+## Authentication
+
+### Recommended: TUI Login
+
+The preferred flow is a one-time login mediated by `reproq-django`:
+
+1. Configure `REPROQ_TUI_SECRET` in Django.
+2. Optionally share the same secret with the worker.
+3. Launch the TUI and press `l` if prompted.
+4. Open the approval URL in a browser, authenticate, and approve the session.
+
+The TUI stores the resulting token locally and reuses it on later runs until you log out.
+
+Stored auth defaults to:
+
+`~/.config/reproq-tui/auth.json`
+
+Override with:
+
+`REPROQ_TUI_AUTH_FILE`
+
+### Alternative: Static Bearer Token
+
+If you prefer a simpler deployment:
+
+1. Protect `reproq-worker` metrics endpoints with `METRICS_AUTH_TOKEN` or the equivalent worker config.
+2. Configure the same token on `reproq-django` if you want protected stats there too.
+3. Pass the token to the TUI:
+
+```bash
 export METRICS_AUTH_TOKEN=your-token
-reproq-tui dashboard
+reproq-tui dashboard --worker-metrics-url http://localhost:9100/metrics
 ```
 
-If metrics/health are protected, pass a bearer token:
+You can also provide custom headers via repeated `--header "Key: Value"` flags or config file entries.
 
-```
-reproq-tui dashboard --worker-metrics-url http://localhost:9100/metrics --auth-token $METRICS_AUTH_TOKEN
-```
+## Common Workflows
 
-Add Django stats (optional):
+### Worker + Django stats
 
-```
+```bash
 reproq-tui dashboard \
   --worker-metrics-url http://localhost:9100/metrics \
   --django-stats-url http://localhost:8000/reproq/stats/ \
-  --auth-token $METRICS_AUTH_TOKEN
+  --auth-token "$METRICS_AUTH_TOKEN"
 ```
 
-The Django stats API accepts `METRICS_AUTH_TOKEN` as a bearer token (or a TUI JWT).
+### Worker + health + events
 
-Add health and events endpoints:
-
-```
+```bash
 reproq-tui dashboard \
   --worker-metrics-url http://localhost:9100/metrics \
   --worker-health-url http://localhost:9100/healthz \
   --events-url http://localhost:9100/events
 ```
 
-Run demo mode (mock server + UI):
+### Demo mode
 
-```
+```bash
 reproq-tui demo
 ```
 
-Demo mode emits `reproq_*` metrics that match the default catalog.
+Demo mode starts a mock backend and emits `reproq_*` metrics that match the default catalog, making it useful for screenshots, quick exploration, and smoke testing.
 
-## Setup checklist
+## Setup Checklist
 
-- Set `REPROQ_TUI_SECRET` on reproq-django (and reproq-worker if you want TUI login to authorize `/metrics`).
-- Ensure the worker `/metrics`, `/healthz`, and `/events` are reachable from your machine.
-- Optional: set `REPROQ_TUI_WORKER_INTERNAL_URL` (or `REPROQ_TUI_WORKER_URL`) on reproq-django so the TUI can auto-configure worker endpoints.
-- Run `reproq-tui` and paste your Django URL (it will only ask for the worker URL if needed).
-- Launch the dashboard and sign in when prompted (press `l` to login/logout). The config file is auto-loaded.
+- Ensure the worker exposes `/metrics`
+- Expose `/healthz` and `/events` if you want richer operational views
+- Configure `reproq-django` if you want the guided login/bootstrap flow
+- Decide whether you want JWT-based TUI login or a static bearer token
+- Save your preferred defaults in a config file if you run the tool often
 
-Automation script:
+An automation helper is also included:
 
-```
+```bash
 scripts/setup.sh --worker-url http://worker:9100 --django-url http://django:8000
 ```
 
-You can also pass `--worker-metrics-url` if you only have the full metrics URL.
-
-## Authentication & access
-
-### TUI login (recommended)
-
-Configure a single secret in Django (and optionally the worker), then sign in once:
-
-1) Set `REPROQ_TUI_SECRET` on `reproq-django`. This enables the TUI login endpoints.
-2) Set the same `REPROQ_TUI_SECRET` on `reproq-worker` so the JWT is accepted for `/metrics`, `/healthz`, and `/events`.
-3) Run the TUI with `--django-url` (or `--django-stats-url`) and press `l` to log in.
-4) Open the URL shown in the TUI, sign in as a superuser, and approve.
-
-The TUI stores the token locally and reuses it on restart until you log out (`l`).
-Stored tokens live in `~/.config/reproq-tui/auth.json` (override with `REPROQ_TUI_AUTH_FILE`).
-If you set `REPROQ_TUI_WORKER_URL` (or `REPROQ_TUI_WORKER_METRICS_URL`) in Django, the pairing
-response includes worker endpoints so the TUI can auto-configure after you enter the Django URL.
-By default Django also serves `/reproq/tui/config/` and proxy endpoints (`/reproq/tui/metrics/`,
-`/reproq/tui/healthz/`, `/reproq/tui/events/`) so the TUI can configure everything from the
-base website URL. If no explicit worker URL is set, Django assumes a local worker at
-`127.0.0.1:9090` (or `METRICS_ADDR`/`METRICS_PORT` if set).
-If your stats endpoint is not `/reproq/stats/`, set `--django-url` explicitly (use the base URL without `/reproq`).
-If `--django-url` is not set, press `l` and paste the Django base URL (https optional; backslashes are normalized).
-
-Example:
-
-```
-reproq-tui dashboard --worker-url http://localhost:9100 --django-url http://localhost:8000
-```
-
-CLI automation:
-
-```
-reproq-tui login --django-url http://localhost:8000
-reproq-tui logout
-```
-
-### Static token (alternative)
-
-Recommended flow (single token everywhere):
-
-1) In `reproq-worker`, set `metrics.auth_token` (config file) or `METRICS_AUTH_TOKEN` (env).
-   This protects `/metrics`, `/healthz`, and `/events` with `Authorization: Bearer <token>`.
-2) In `reproq-django`, set `METRICS_AUTH_TOKEN` for `/reproq/stats/` (use the same value for worker + stats).
-3) In `reproq-tui`, pass `--auth-token` or set `REPROQ_TUI_AUTH_TOKEN` (falls back to `METRICS_AUTH_TOKEN`).
-
-Single-secret shortcut: if `METRICS_AUTH_TOKEN` is unset, both reproq-worker and
-reproq-django will reuse `REPROQ_TUI_SECRET` as the bearer token, so you can
-secure metrics + TUI auth with just one shared secret.
-
-Custom headers:
-
-- Use `--header "X-Reproq-Token: <token>"` or `headers:` in the config file to send a non-Bearer header.
-- If you set an `Authorization` header manually, it is respected and `--auth-token` will not override it.
-
 ## Configuration
 
-Config sources (highest to lowest precedence): flags, env vars, config file, defaults.
+Configuration precedence is:
 
-If `~/.config/reproq-tui/config.yaml` (or the platform equivalent) exists, it is
-auto-loaded. Use `--config` or `REPROQ_TUI_CONFIG` to override.
-`reproq-tui setup` writes to this path by default.
+1. CLI flags
+2. Environment variables
+3. Config file
+4. Built-in defaults
 
-Note: the default catalog matches `reproq-worker` metrics (v0.0.133+). Map
-canonical metrics to your worker's metric names via `--metric` or the config file.
+If a config file exists at the platform default location, it is loaded automatically. Override with:
 
-Flags (selected):
-
-- `--worker-url` (base URL; derives `/metrics` and `/healthz`)
-- `--worker-metrics-url` (optional; if neither worker URL is set, the TUI prompts)
-- `--worker-health-url`
-- `--events-url`
-- `--django-url`
-- `--django-stats-url`
-- `--interval` (default `1s`)
-- `--health-interval` (default `500ms`)
-- `--stats-interval` (default `5s`)
-- `--window` (default `5m`)
-- `--theme` (`auto`, `dark`, `light`)
-- `--auto-login` (default `true`)
-- `--header "Key: Value"` (repeatable)
-- `--auth-token` (adds `Authorization: Bearer <token>` header)
-- `--timeout` (default `2s`)
-- `--insecure-skip-verify` (dev only)
-- `--metric canonical=actual` (repeatable)
-- `--log-file /path/to/reproq-tui.log`
-
-Env vars:
-
+- `--config`
 - `REPROQ_TUI_CONFIG`
-- `REPROQ_TUI_WORKER_URL`
-- `REPROQ_TUI_WORKER_METRICS_URL`
-- `REPROQ_TUI_WORKER_HEALTH_URL`
-- `REPROQ_TUI_EVENTS_URL`
-- `REPROQ_TUI_DJANGO_URL`
-- `REPROQ_TUI_DJANGO_STATS_URL`
-- `REPROQ_TUI_INTERVAL`
-- `REPROQ_TUI_HEALTH_INTERVAL`
-- `REPROQ_TUI_STATS_INTERVAL`
-- `REPROQ_TUI_WINDOW`
-- `REPROQ_TUI_THEME`
-- `REPROQ_TUI_AUTO_LOGIN`
-- `REPROQ_TUI_AUTH_FILE`
-- `REPROQ_TUI_HEADERS` (comma-separated `Key: Value`)
-- `REPROQ_TUI_AUTH_TOKEN` (falls back to `METRICS_AUTH_TOKEN`)
-- `REPROQ_TUI_TIMEOUT`
-- `REPROQ_TUI_INSECURE_SKIP_VERIFY`
-- `REPROQ_TUI_METRICS` (comma-separated `canonical=actual`)
-- `REPROQ_TUI_LOG_FILE`
 
-Config file (YAML or TOML) with `--config` (use `worker_url` or explicit URLs):
+Example config:
 
 ```yaml
 worker_url: http://localhost:9100
-# worker_metrics_url: http://localhost:9100/metrics
-# worker_health_url: http://localhost:9100/healthz
 django_url: http://localhost:8000
 events_url: http://localhost:9100/events
 django_stats_url: http://localhost:8000/reproq/stats/
@@ -258,60 +219,51 @@ headers:
 metrics:
   queue_depth: worker_queue_depth
   tasks_total: worker_tasks_total
-  tasks_failed_total: worker_tasks_total{status="failure"}
 ```
 
-Metric mappings support label selectors in Prometheus format (for example
-`reproq_tasks_processed_total{status="failure"}`).
+Frequently used environment variables:
 
-## Keybindings
+- `REPROQ_TUI_WORKER_URL`
+- `REPROQ_TUI_WORKER_METRICS_URL`
+- `REPROQ_TUI_WORKER_HEALTH_URL`
+- `REPROQ_TUI_EVENTS_URL`
+- `REPROQ_TUI_DJANGO_URL`
+- `REPROQ_TUI_DJANGO_STATS_URL`
+- `REPROQ_TUI_AUTH_TOKEN`
+- `REPROQ_TUI_HEADERS`
+- `REPROQ_TUI_THEME`
+- `REPROQ_TUI_LOG_FILE`
 
-- `q` quit
-- `?` help
-- `p` pause/resume
-- `r` refresh
-- `1/2/3` switch window (1m/5m/15m)
-- `tab` next pane (dashboard) or next details tab
-- `/` filter input
-- `e` toggle events pane
-- `t` toggle theme
-- `s` export snapshot JSON
-- `d` open details (queues/workers/tasks/errors)
-- `l` login/logout
+## Relationship to the Reproq Stack
 
-Filter tips:
-- Use `queue:default`, `worker:worker-1`, or `task:123` to apply server-side SSE filters.
-- Combine with text (for example `queue:default error`) to keep local filtering on the remaining text.
+- [`reproq-django`](https://github.com/adpena/reproq-django) handles task definition, enqueueing, Django Admin integration, and TUI login/bootstrap endpoints.
+- [`reproq-worker`](https://github.com/adpena/reproq-worker) executes tasks, exposes runtime metrics, and powers the operational data shown in the TUI.
 
-## Snapshot export
+If you want the best operator experience, run all three together.
 
-Press `s` to export a JSON snapshot of current state and recent series points.
-Files are written to the current working directory with a timestamped name.
+## When To Use It
 
-## Documentation
+`reproq-tui` is a good fit when you want:
+
+- Lightweight observability during local development
+- A terminal-first operator workflow
+- Quick visibility into task system health without opening a browser
+- A simple way to demo Reproq’s operational story
+
+If you need long-term time series, alerts, and dashboards for large teams, pair it with your usual observability stack rather than treating it as a replacement.
+
+## Further Reading
 
 - `docs/ARCHITECTURE.md`
 - `docs/METRICS.md`
 - `docs/EVENTS.md`
 - `docs/DEVELOPMENT.md`
 
-## Recommended terminal settings
-
-- Terminal size: 120x30 or larger.
-- Enable truecolor if your terminal supports it.
-- Use a monospace font with good box-drawing glyphs.
-
-## Screenshots
-
-- macOS: use `cmd+shift+4`
-- Linux: use your desktop screenshot tool or `gnome-screenshot`
-- Windows: use `Win+Shift+S`
-
 ## Development
 
-Go 1.24.2+ required.
+For local development:
 
-```
+```bash
 make fmt
 make test
 make lint
@@ -320,12 +272,10 @@ make build
 
 ## Troubleshooting
 
-- Timeouts: increase `--timeout` or check network connectivity.
-- Missing metrics: map canonical keys in `docs/METRICS.md`.
-- Colors look off: set `--theme dark|light` or check terminal truecolor support.
-- Top line clipped: disable the terminal status bar overlay or set `REPROQ_TUI_SAFE_TOP=1` (auto-detected in Ghostty/iTerm).
-- Windows terminals: prefer Windows Terminal or a recent PowerShell with UTF-8.
-- Low-memory mode: if metrics/health/events return 503 with a low-memory hint, unset `LOW_MEMORY_MODE` on the server to re-enable them.
+- If metrics are timing out, increase `--timeout` and verify network reachability.
+- If the wrong metric names appear, map them explicitly in config or review `docs/METRICS.md`.
+- If colors or layout look wrong, set `--theme dark` or `--theme light` and verify your terminal supports modern box-drawing/truecolor output.
+- If auth works in Django but not on worker endpoints, verify the shared secret or bearer token is configured consistently across services.
 
 ## License
 
