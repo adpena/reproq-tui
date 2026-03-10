@@ -1,4 +1,11 @@
 /bin/
 /dist/
+.tmp/
+tmp/
 *.log
+.env
+.env.*
+.idea/
+.vscode/
+coverage.out
 .DS_Store
